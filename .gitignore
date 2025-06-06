@@ -1,0 +1,6 @@
+wandb
+*.csv
+*.zip
+__pycache__
+logs
+env

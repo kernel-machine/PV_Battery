@@ -1,0 +1,35 @@
+- Input frames adattivo
+- Fai in modo che fà anche una stima delle previsioni solari
+
+0.99 -> 2775120
+0.80 -> 2834640
+2943720
+
+
+Bounds 0.15 - 0.90 
+Lifetime: 10368060 s
+Processed images: 81134
+Efficiency: 0.0386323597800305
+Total harvested energy: 2100156.4611111092 mAh
+Uptime: 120 days, 00 hours, 01 minutes, 00 seconds
+Battery level: 0.9573164983164808
+
+Bounds 0.10 - 0.90
+Done
+Lifetime: 10368060 s
+Processed images: 90101
+Efficiency: 0.042902041666139076 
+Total harvested energy: 2100156.4611111092 mAh
+Uptime: 120 days, 00 hours, 01 minutes, 00 seconds
+Battery level: 0.8267146801346672
+
+Bounds 0.05 - 0.90
+Lifetime: 10368060 s
+Processed images: 95281
+Efficiency: 0.04536852456677947
+Total harvested energy: 2100156.4611111092 mAh
+Uptime: 120 days, 00 hours, 01 minutes, 00 seconds
+Battery level: 0.6903510437710358
+
+
+# PROVA REWARD
