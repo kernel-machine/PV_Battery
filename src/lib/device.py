@@ -139,8 +139,8 @@ class Device:
     def get_energy_efficiency(self) -> float:
         return (self.total_consumed_energy_mah/self.total_produced_energy_mah) if self.total_produced_energy_mah > 0 else 0
 
-    def show_plot(self, show: bool = False, save: bool = False, filename: str = "test.png"):
-        fig, axs = plt.subplots(4)
+    def show_plot(self, show: bool = False, save: bool = False, filename: str = "test.png", additional_data:list = None):
+        fig, axs = plt.subplots(5 if additional_data else 4)
         axs[0].set_title("Energy consumption (mA)")
         axs[0].plot(self.times, self.energy_consumption_ma,
                     label="Energy consumption")
@@ -153,6 +153,10 @@ class Device:
         axs[3].set_title("Battery level (%)")
         axs[3].plot(self.times, self.battery_levels_percentage,
                     label="Battery level")
+        if additional_data:
+            axs[4].set_title("Additional data")
+            axs[4].plot(self.times, additional_data,
+                    label="Additional data")
         plt.legend()
         if save:
             plt.savefig(filename, dpi=300)
