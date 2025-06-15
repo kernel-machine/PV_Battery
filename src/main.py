@@ -8,6 +8,7 @@ from lib.env import NodeEnv
 import random
 import datetime
 import argparse
+from lib.pid_controller import PIDController
 
 args = argparse.ArgumentParser()
 args.add_argument("--short_training", default=False, action="store_true", help="Set to have a shorter training")

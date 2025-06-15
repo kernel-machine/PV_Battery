@@ -33,3 +33,10 @@ Battery level: 0.6903510437710358
 
 
 # PROVA REWARD
+
+COSA FARE
+Guarda la figura pid_result
+Devi dimoistare che non riesci più ad accumulare energia perchè prima che arrivasse eri già al un livello basso
+ e abbassandoti ancora di più avresti spento il dispositivo. Perciò caro luca tieni in considerazione che ci possono essere consi
+ in cui devi per forza spegare energia
+ 

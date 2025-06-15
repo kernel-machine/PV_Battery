@@ -78,7 +78,7 @@ class NodeEnv(gym.Env):
         if battery_percentage < LOWER_BOUND:
             reward = -2*(LOWER_BOUND-battery_percentage)
         elif battery_percentage > UPPER_BOUND:
-            reward = -2*(battery_percentage-UPPER_BOUND)
+            reward = -2*(battery_percentage-UPPER_BOUND)+self.device.processing_rate
         else:
             reward = 0
         if terminated:
