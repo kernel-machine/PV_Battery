@@ -1,35 +1,25 @@
 from collections.abc import Callable
 import matplotlib.pyplot as plt
-
-
-def ms2h(ms: int) -> float:
-    return ms/3600000.0
-
-
-def h2ms(h: float) -> int:
-    return h*3600000.0
-
-
-def s2h(s: float) -> float:
-    return s/3600.0
-
-
+from utils import s2h
 class Device:
 
     def __init__(self,
                  base_load_energy_ma: int,
                  full_load_energy_ma: int,
                  battery_max_capacity_mah: int,
+                 battery_nominal_voltage_v: float,
                  task_duration_s: int,
+                 device_nominal_voltage_v: float = 5,
                  init_battery_percentage: float = 0.5,
                  processing_rate_force_update_after_s: int = 0,):
 
         # Device specific parameters
-        self.base_load_energy_na = base_load_energy_ma*1000
-        self.full_load_energy_na = full_load_energy_ma*1000
-        self.battery_max_capacity_nah = battery_max_capacity_mah*1000
-        self.battery_current_capacity_nah = int(
-            self.battery_max_capacity_nah*init_battery_percentage)  # Battery at 50%
+        self.base_load_energy_w = (base_load_energy_ma/1000)*device_nominal_voltage_v
+        self.full_load_energy_w = (full_load_energy_ma/1000)*device_nominal_voltage_v
+        self.battery_nominal_voltage_v = battery_nominal_voltage_v
+        self.battery_max_capacity_wh = self.battery_nominal_voltage_v*(battery_max_capacity_mah/1000)
+        self.battery_current_capacity_wh = self.battery_max_capacity_wh*init_battery_percentage  # Battery at 50%
+        self.discrete_processing:bool = True
 
         # PV specifications
         self.pv_instant_production_na = 0
@@ -45,27 +35,36 @@ class Device:
         # Store statistics
         self.times = []
         self.battery_levels_percentage = []
-        self.energy_consumption_ma = []
-        self.energy_harvested_ma = []
+        self.energy_consumption_w = []
+        self.energy_harvested_w = []
         self.processing_rates = []
         self.total_processed_images = 0
-        self.total_consumed_energy_mah = 0
-        self.total_produced_energy_mah = 0
-        self.total_wasted_energy_mah = 0
+        self.total_consumed_energy_wh = 0
+        self.total_produced_energy_wh = 0
+        self.total_wasted_energy_wh = 0
 
-        self.last_wasted_energy_mah = 0
+        self.last_wasted_energy_wh = 0
         self.last_harvested_energy_nah = 0
-        self.last_energy_used_nah = 0
+        self.last_energy_used_wh = 0
+
+
+        self.local_energy_counter_wh = 0
+        self.maximum_rates = []
+        self.is_day = False
+        self.is_maximum_reached = False
+        self.plot_added = False
+        self.maximum_battery_time_s = 0
+        self.day_start_time_s = 0
+        self.day_end_time_s = 0
+
+        self.max_production = 0
 
     # Update the instant production of the PV
-    def set_pv_production_current_na(self, pv_current_na: int):
-        self.pv_instant_production_na = pv_current_na
-
-    def set_pv_production_current_ma(self, pv_current_ma: int):
-        self.set_pv_production_current_na(pv_current_ma*1000)
+    def set_pv_production_current_w(self, pv_w: float):
+        self.pv_instant_w = pv_w
 
     def get_pv_production_normalized(self) -> float:
-        return (self.pv_instant_production_na / 1000000)/2.31
+        return self.pv_instant_w / 40
 
     def set_processing_rate(self, processing_rate: float):
         self.processing_rate = max(0.0, min(processing_rate, 1.0))
@@ -76,7 +75,7 @@ class Device:
             self.last_update_s = time_s
         update_delta_time_h = s2h(time_s-self.last_update_s)
         self.last_update_s = time_s
-        """ or self.is_processing_rate_updated"""
+
         if (time_s > self.next_inference_time_s) and self.processing_rate > 0:
             # Start a new task
             self.task_start_time_s = time_s
@@ -90,87 +89,111 @@ class Device:
                 self.next_inference_time_s = time_s + wait_time_s
 
             processing_state = 1
-            self.total_processed_images += 1
-        elif time_s < self.task_start_time_s + self.task_duration_s and self.processing_rate > 0:
-            # Continue task
+            self.total_processed_images += (time_s-self.task_start_time_s)
+        elif time_s < self.next_inference_time_s and self.processing_rate > 0:
+            # Continue task, processing is going but not completed
             processing_state = 1
         else:
             # No Processing
             processing_state = 0
 
-        self.last_harvested_energy_nah = self.pv_instant_production_na * update_delta_time_h
-        self.total_produced_energy_mah += (self.last_harvested_energy_nah/1000)
-        self.last_energy_used_nah = (self.base_load_energy_na + (self.full_load_energy_na*processing_state)) * update_delta_time_h
-        self.total_consumed_energy_mah += (self.last_energy_used_nah/1000)
+        self.last_harvested_energy_wh = self.pv_instant_w * update_delta_time_h
+        self.total_produced_energy_wh += self.last_harvested_energy_wh
+        self.last_energy_used_wh = (self.base_load_energy_w + (self.full_load_energy_w*processing_state)) * update_delta_time_h
+        self.total_consumed_energy_wh += self.last_energy_used_wh
+
+        # Update day or night
+        if not self.is_day and self.pv_instant_w > 0 and s2h(time_s-self.day_end_time_s) > 1: #1h of hysteresis
+            self.is_day = True
+            self.day_start_time_s = time_s
+        elif self.is_day and self.pv_instant_w == 0 and s2h(time_s-self.day_start_time_s) > 1:
+            self.is_day = False
+            self.day_end_time_s = time_s
+            self.plot_added = False
+
+        if self.is_day:
+            self.local_energy_counter_wh+=self.last_harvested_energy_wh
+            if self.local_energy_counter_wh > self.battery_max_capacity_wh + (self.base_load_energy_w + self.full_load_energy_w)*s2h(time_s-self.day_start_time_s) and not self.is_maximum_reached:
+                self.maximum_battery_time_s = time_s
+                self.is_maximum_reached = True
+        else:
+            self.local_energy_counter_wh = 0
+            self.is_maximum_reached = False
+            if not self.plot_added:
+                a = (self.day_start_time_s, self.day_end_time_s, self.day_end_time_s) if self.maximum_battery_time_s == 0 else (self.day_start_time_s,self.maximum_battery_time_s,self.day_end_time_s)
+                #a = (self.day_start_time_s, self.maximum_battery_time_s)
+                if a != (0,0,0):
+                    self.maximum_rates.append(a)
+                self.plot_added = True
 
         # Update battery level
-        self.battery_current_capacity_nah += self.last_harvested_energy_nah - self.last_energy_used_nah
-        self.battery_current_capacity_nah = max(
-            0, self.battery_current_capacity_nah)
+        self.battery_current_capacity_wh += self.last_harvested_energy_wh - self.last_energy_used_wh
+        self.battery_current_capacity_wh = max(
+            0, self.battery_current_capacity_wh)
         
         # Accumulate wasted energy if battery is full
-        if self.battery_current_capacity_nah > self.battery_max_capacity_nah:
-            self.last_wasted_energy_mah = (self.battery_current_capacity_nah - self.battery_max_capacity_nah)/1000
-            self.total_wasted_energy_mah += self.last_wasted_energy_mah
-            self.battery_current_capacity_nah = self.battery_max_capacity_nah
+        if self.battery_current_capacity_wh > self.battery_max_capacity_wh:
+            self.last_wasted_energy_wh = (self.battery_current_capacity_wh - self.battery_max_capacity_wh)/1000
+            self.total_wasted_energy_wh += self.last_wasted_energy_wh
+            self.battery_current_capacity_wh = self.battery_max_capacity_wh
         else:
-            self.last_wasted_energy_mah = 0
+            self.last_wasted_energy_wh = 0
 
         # print(f"T: {time_s} s | Next: {self.next_inference_time_s} | Pr: {self.processing_rate} | Battery: {self.battery_current_capacity_nah} nAh | Energy consumed by baseload: {energy_used_by_baseload_na} nAh | Energy used by task {energy_used_by_task_na} nAh | Energy harvested: {energy_produced_na} nAh")
 
         # Update statistics
-        self.energy_consumption_ma.append(
-            (self.base_load_energy_na+self.full_load_energy_na*processing_state)/1000)
-        self.energy_harvested_ma.append(self.pv_instant_production_na/1000)
+        self.energy_consumption_w.append(self.base_load_energy_w+self.full_load_energy_w*processing_state)
+        self.energy_harvested_w.append(self.pv_instant_w)
         self.battery_levels_percentage.append(
-            self.battery_current_capacity_nah/self.battery_max_capacity_nah)
+            self.battery_current_capacity_wh/self.battery_max_capacity_wh)
         self.processing_rates.append(self.processing_rate)
         self.times.append(time_s)
 
-    def get_energy_consumption_ma(self) -> float:
-        return (self.base_load_energy_na + self.full_load_energy_na * self.processing_rate)/1000
-
-    def get_energy_consumption_a(self) -> float:
-        return self.get_energy_consumption_ma()/1000
+    def get_energy_consumption_w(self) -> float:
+        return (self.base_load_energy_w + self.full_load_energy_w * self.processing_rate)
 
     def get_battery_percentage(self) -> float:
-        return self.battery_current_capacity_nah/self.battery_max_capacity_nah
+        return self.battery_current_capacity_wh/self.battery_max_capacity_wh
     
     def get_energy_efficiency(self) -> float:
-        return (self.total_consumed_energy_mah/self.total_produced_energy_mah) if self.total_produced_energy_mah > 0 else 0
+        return (self.total_consumed_energy_wh/self.total_produced_energy_wh) if self.total_produced_energy_wh > 0 else 0
 
-    def show_plot(self, show: bool = False, save: bool = False, filename: str = "test.png", additional_data:list = None):
+    def show_plot(self, show: bool = False, save: bool = False, filename: str = "test.png", additional_data:list = None, start_from:int = 0):
         fig, axs = plt.subplots(5 if additional_data else 4)
-        axs[0].set_title("Energy consumption (mA)")
-        axs[0].plot(self.times, self.energy_consumption_ma,
+        axs[0].set_title("Energy consumption (w)")
+        axs[0].plot(self.times, self.energy_consumption_w,
                     label="Energy consumption")
         axs[1].set_title("Processing rate (%)")
         axs[1].plot(self.times, self.processing_rates,
                     label="Processing rate")
-        axs[2].set_title("Energy harvested (mA)")
-        axs[2].plot(self.times, self.energy_harvested_ma,
+        axs[2].set_title("Energy harvested (w)")
+        axs[2].plot(self.times, self.energy_harvested_w,
                     label="Energy harvested")
         axs[3].set_title("Battery level (%)")
         axs[3].plot(self.times, self.battery_levels_percentage,
                     label="Battery level")
+        axs[2].vlines(self.maximum_rates,ymin=0,ymax=40, color="g")
+        axs[3].vlines(self.maximum_rates,ymin=0,ymax=1, color="g")
         if additional_data:
             axs[4].set_title("Additional data")
             axs[4].plot(self.times, additional_data,
                     label="Additional data")
         plt.legend()
+        for i in range(len(axs)):
+            axs[i].set_xlim(left=start_from)
         if save:
             plt.savefig(filename, dpi=300)
         if show:
             plt.show()
 
     def reset(self, battery_percentage: float = 0.5):
-        self.battery_current_capacity_nah = int(
-            self.battery_max_capacity_nah*battery_percentage)
+        self.battery_current_capacity_wh = int(
+            self.battery_max_capacity_wh*battery_percentage)
         self.last_update_s = 0
         self.processing_rate = 0
-        self.set_pv_production_current_ma(0)
-        self.energy_consumption_ma.clear()
-        self.energy_harvested_ma.clear()
+        self.set_pv_production_current_w(0)
+        self.energy_consumption_w.clear()
+        self.energy_harvested_w.clear()
         self.battery_levels_percentage.clear()
         self.processing_rates.clear()
         self.times.clear()
@@ -179,10 +202,16 @@ class Device:
         return self.next_inference_time_s == 0
     
 if __name__ == "__main__":
-    device = Device(100, 100, 1000, 10)
-    device.set_processing_rate(0.1)
-    device.set_pv_production_current_ma(2000)
-    for i in range(0,60*60*24*5,60):
-        device.update(i)
-        print(f"Time: {i} s | Battery: {device.get_battery_percentage()}% | Processing rate: {device.processing_rate}")
+    device = Device(
+        base_load_energy_ma=50,
+        full_load_energy_ma=1000,
+        battery_max_capacity_mah=3300,
+        battery_nominal_voltage_v=3.7,
+        task_duration_s=1
+    )
+    device.set_processing_rate(1)
+    device.set_pv_production_current_w(20)
+    device.update(0)
+    device.update(10)
+    print(device.total_processed_images)
     device.show_plot(show=False, save=True)
