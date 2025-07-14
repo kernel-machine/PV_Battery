@@ -1,6 +1,6 @@
 # HOW TO RUN
 
-- Put solcast2024.csv and solcast2025.csv on the project folder (not in SRC) but in the main folder
+- Put [solcast_march2025.csv](https://github.com/user-attachments/files/21213142/solcast_march2025.csv) and [solcast2025.csv](https://github.com/user-attachments/files/21213140/solcast2025.csv) on the project folder (not in SRC) but in the main folder
 - install the python libraries in the `requirements.txt`
 
 ```bash
@@ -9,3 +9,4 @@ python -u main.py --discrete_action --alg ppo --n_env 8 --batch_size 512 --incen
 ```
 
 These are the best parameters find untill now
+
