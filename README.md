@@ -10,3 +10,7 @@ python -u main.py --discrete_action --alg ppo --n_env 8 --batch_size 512 --incen
 
 These are the best parameters find untill now
 
+## Important files
+- **main.py** contains the training and evaluation code
+- **lib/env.py** contains the RL Environment
+- **lib/device.py** contains the code to simulate the device
