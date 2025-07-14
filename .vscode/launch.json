@@ -5,12 +5,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File",
+            "name": "Python Debugger: Python File",
             "type": "debugpy",
             "request": "launch",
             "program": "${file}",
-            "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/src"
+            "args": [
+                "--discrete_action","--alg","ppo","--n_env","8","--batch_size","512","--incentive_factor","1","--img_name","wh_if_pv_state","--val"
+            ]
         }
     ]
 }

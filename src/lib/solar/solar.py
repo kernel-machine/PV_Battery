@@ -15,7 +15,7 @@ class Solar:
                 value = (delta.total_seconds(), int(line[12])*scale_factor, line)
                 self.values.append(value)
 
-    def get_solar_a(self, time_s:int):
+    def get_solar_w(self, time_s:int):
         #print("Solar time:", time_s)
         for i in range(len(self.values)):
             if self.values[i][0]==time_s:

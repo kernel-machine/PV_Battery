@@ -1,8 +1,13 @@
 from collections.abc import Callable
 import matplotlib.pyplot as plt
-from utils import s2h
-class Device:
+from lib.utils import s2h,h2s
+from enum import Enum
 
+class ProcessingState(Enum):
+    RUNNING = 1
+    STOPPED = 2
+
+class Device:
     def __init__(self,
                  base_load_energy_ma: int,
                  full_load_energy_ma: int,
@@ -26,11 +31,14 @@ class Device:
 
         # Algoritm parameters
         self.processing_rate: float = 0
+        self.target_processing_rate: float = 0
         self.next_inference_time_s = 0
         self.last_update_s = 0  # Used for energy estimation
         self.task_start_time_s = 0
         self.task_duration_s = task_duration_s
         self.processing_rate_force_update_after_s = processing_rate_force_update_after_s
+        self.processing_state:int = 0
+        self.total_processing_time_s = 0
 
         # Store statistics
         self.times = []
@@ -39,6 +47,7 @@ class Device:
         self.energy_harvested_w = []
         self.processing_rates = []
         self.total_processed_images = 0
+        self.total_processed_images_last_time = 0
         self.total_consumed_energy_wh = 0
         self.total_produced_energy_wh = 0
         self.total_wasted_energy_wh = 0
@@ -71,14 +80,29 @@ class Device:
 
     def update(self, time_s: float):
         # print("Check")
+        if time_s < self.last_update_s:
+            return
+        
         if self.last_update_s == 0:
             self.last_update_s = time_s
         update_delta_time_h = s2h(time_s-self.last_update_s)
         self.last_update_s = time_s
 
-        if (time_s > self.next_inference_time_s) and self.processing_rate > 0:
-            # Start a new task
+        if self.processing_rate == 1 and self.processing_state == 0:
             self.task_start_time_s = time_s
+            self.processing_state = 1
+        elif self.processing_state == 1 and self.processing_rate == 0:
+            self.processing_state = 0
+            processing_time_s = time_s-self.task_start_time_s
+            self.total_processed_images += processing_time_s//self.task_duration_s
+            # Conta da quanto tempo stai processando e conta le immagini
+        """
+        if (time_s > self.next_inference_time_s or time_s==0) and self.processing_rate > 0:
+            # Start a new task
+            if self.processing_state == 0:
+                self.task_start_time_s = time_s
+                self.processing_state = 1
+
             wait_time_s = (self.task_duration_s) * \
                 (1-self.processing_rate)/self.processing_rate
 
@@ -88,19 +112,21 @@ class Device:
             else:
                 self.next_inference_time_s = time_s + wait_time_s
 
-            processing_state = 1
-            self.total_processed_images += (time_s-self.task_start_time_s)
+            self.total_processed_images += (time_s-self.task_start_time_s)//self.task_duration_s
         elif time_s < self.next_inference_time_s and self.processing_rate > 0:
             # Continue task, processing is going but not completed
-            processing_state = 1
+            self.processing_state = 1
         else:
             # No Processing
-            processing_state = 0
+            self.processing_state = 0
+        """
 
+        
         self.last_harvested_energy_wh = self.pv_instant_w * update_delta_time_h
         self.total_produced_energy_wh += self.last_harvested_energy_wh
-        self.last_energy_used_wh = (self.base_load_energy_w + (self.full_load_energy_w*processing_state)) * update_delta_time_h
+        self.last_energy_used_wh = (self.base_load_energy_w + (self.full_load_energy_w*self.processing_state)) * update_delta_time_h
         self.total_consumed_energy_wh += self.last_energy_used_wh
+        self.total_processing_time_s += h2s(update_delta_time_h) * self.processing_state
 
         # Update day or night
         if not self.is_day and self.pv_instant_w > 0 and s2h(time_s-self.day_end_time_s) > 1: #1h of hysteresis
@@ -142,7 +168,7 @@ class Device:
         # print(f"T: {time_s} s | Next: {self.next_inference_time_s} | Pr: {self.processing_rate} | Battery: {self.battery_current_capacity_nah} nAh | Energy consumed by baseload: {energy_used_by_baseload_na} nAh | Energy used by task {energy_used_by_task_na} nAh | Energy harvested: {energy_produced_na} nAh")
 
         # Update statistics
-        self.energy_consumption_w.append(self.base_load_energy_w+self.full_load_energy_w*processing_state)
+        self.energy_consumption_w.append(self.base_load_energy_w+self.full_load_energy_w*self.processing_state)
         self.energy_harvested_w.append(self.pv_instant_w)
         self.battery_levels_percentage.append(
             self.battery_current_capacity_wh/self.battery_max_capacity_wh)
@@ -154,7 +180,7 @@ class Device:
 
     def get_battery_percentage(self) -> float:
         return self.battery_current_capacity_wh/self.battery_max_capacity_wh
-    
+
     def get_energy_efficiency(self) -> float:
         return (self.total_consumed_energy_wh/self.total_produced_energy_wh) if self.total_produced_energy_wh > 0 else 0
 
@@ -192,6 +218,9 @@ class Device:
         self.last_update_s = 0
         self.processing_rate = 0
         self.set_pv_production_current_w(0)
+        self.total_processing_time_s = 0
+
+        # Clear arrays
         self.energy_consumption_w.clear()
         self.energy_harvested_w.clear()
         self.battery_levels_percentage.clear()
@@ -209,9 +238,14 @@ if __name__ == "__main__":
         battery_nominal_voltage_v=3.7,
         task_duration_s=1
     )
-    device.set_processing_rate(1)
     device.set_pv_production_current_w(20)
+    device.set_processing_rate(1)
     device.update(0)
-    device.update(10)
+    device.update(5) #5 processate
+    device.update(7) #7 processate
+    device.update(5) # Skippato
+    device.set_processing_rate(0) #t=10
+    device.update(10) # 10 Processate
+    device.update(12) # 7 Processate
     print(device.total_processed_images)
     device.show_plot(show=False, save=True)
