@@ -4,6 +4,17 @@ from lib.utils import s2h
 
 
 class TestDevice(unittest.TestCase):
+    def test_battery_percentage(self):
+        device = Device(
+            base_load_energy_ma=50,
+            full_load_energy_ma=1000,
+            battery_max_capacity_mah=3300,
+            battery_nominal_voltage_v=3.7,
+            task_duration_s=1
+        )
+        device.reset(0,battery_percentage=0.3)
+        self.assertEqual(0.3, device.get_battery_percentage())
+
     def test_processed_images(self):
         device = Device(
             base_load_energy_ma=50,
@@ -34,7 +45,7 @@ class TestDevice(unittest.TestCase):
             device_nominal_voltage_v=5,
             task_duration_s=1
         )
-        device.reset(battery_percentage=0.5)  # 1000 mah
+        device.reset(0,battery_percentage=0.5)  # 1000 mah
         original_batt_wh = device.battery_current_capacity_wh
         device.set_pv_production_current_w(0)
         device.set_processing_rate(1)  # Applied at t=1
@@ -70,7 +81,7 @@ class TestDevice(unittest.TestCase):
             device_nominal_voltage_v=5,
             task_duration_s=1
         )
-        device.reset(battery_percentage=0.5)
+        device.reset(0,battery_percentage=0.5)
         device.set_pv_production_current_w(10)  # PV panel set to 10w
         device.update(0)  # PV production takes effect
         start_battery_wh = device.battery_current_capacity_wh

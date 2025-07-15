@@ -220,10 +220,9 @@ class Device:
         if show:
             plt.show()
 
-    def reset(self, battery_percentage: float = 0.5):
-        self.battery_current_capacity_wh = int(
-            self.battery_max_capacity_wh*battery_percentage)
-        self.last_update_s = 0
+    def reset(self, time_s:int, battery_percentage: float = 0.5):
+        self.battery_current_capacity_wh = self.battery_max_capacity_wh*battery_percentage
+        self.last_update_s = time_s
         self.processing_rate = 0
         self.set_pv_production_current_w(0)
         self.total_processing_time_s = 0
@@ -234,6 +233,8 @@ class Device:
         self.battery_levels_percentage.clear()
         self.processing_rates.clear()
         self.times.clear()
+
+        #print("[DEVICE]Reset | Batt:",self.get_battery_percentage())
 
     def is_inference_finished(self, time_s:int) -> bool:
         return self.next_inference_time_s == 0
