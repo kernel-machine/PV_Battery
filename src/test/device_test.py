@@ -56,8 +56,8 @@ class TestDevice(unittest.TestCase):
         self.assertEqual(device.total_processed_images, 10)
         battery_processing_end = device.battery_current_capacity_wh
 
-        device.update(20)
-        batt = battery_processing_end - s2h(20-11)*device.base_load_energy_w
+        device.update(80)
+        batt = battery_processing_end - s2h(80-11)*device.base_load_energy_w
         self.assertAlmostEqual(device.battery_current_capacity_wh,
                                batt, "Battery consumption with an idle state")
 

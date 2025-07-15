@@ -11,7 +11,7 @@ from lib.utils import s2h
 
 
 class NodeEnv(gym.Env):
-    def __init__(self, csv_solar_data_path: str, step_s: int, stop_on_full_battery: bool = False, discrete_action: bool = False, discrete_state: bool = False, truncate_alter_d: int = 30, incentive_factor:float=0.3):
+    def __init__(self, csv_solar_data_path: str, step_s: int, stop_on_full_battery: bool = False, discrete_action: bool = False, discrete_state: bool = False, truncate_alter_d: int = 30, incentive_factor:float=0.3, episode_end_on_sunrise: bool = False):
         self.device = Device(
             base_load_energy_ma=50,
             full_load_energy_ma=1000,
@@ -43,7 +43,7 @@ class NodeEnv(gym.Env):
         self.discrete_state = discrete_state
         if discrete_state:
             print("Using discrete state space")
-            self.observation_space = gym.spaces.MultiDiscrete([5, 5, 2])
+            self.observation_space = gym.spaces.MultiDiscrete([5])
         else:
             self.observation_space = gym.spaces.Box(
                 0, 1, [len(self.__get_obs())])
@@ -63,39 +63,48 @@ class NodeEnv(gym.Env):
         # self.ekf = ExtendedKalmanFilter(dim_x=1, dim_z=1)
         # self.ekf.x = np.array([self.solar.get_solar(self.time_s)])  # Initial state
         self.last_day_state = None
+        self.episode_end_on_sunrise = episode_end_on_sunrise
+
+        self.battery = 0.5
+        self.processed_images = 0
 
     def reset(self, *, seed=None, options=None):
-        # Reset with random battery percentage
+        # Reset with random battery percentage, used for validation
         if options is not None and options["norandom"] == True:
             self.device.reset(battery_percentage=0.5)
             self.boot_time_s = 5*60
         else:
             self.device.reset(battery_percentage=rand.randrange(2, 8)/10)
-            self.boot_time_s = rand.randint(5*60, 60*60*24*300)  # Random day from 0 to 300
+            self.boot_time_s = rand.randint(5*60, 60*60*24*300)
         self.time_s = self.boot_time_s
+
+        self.battery = rand.randrange(4,8)/10
+        self.processed_images = 0
+        self.device.update(self.time_s)
+
         obs = self.__get_obs()
         info = self.__get_info()
         return obs, info
 
     def step(self, action):  # NON VA BENE CHIAMARLO OGNI TOT SECONDI, MA OGNI FINE INFERENZA
-        self.number_of_steps+=1
-        if action==1 or (type(action)==list and action[0]==1):
-            self.number_of_high+=1
-        else:
-            self.number_of_low +=1
+        self.time_s += self.step_s
+
+        # Set solar data
+        solar_current_w = self.solar.get_solar_w(self.time_s)
+        self.device.set_pv_production_current_w(solar_current_w)
+
         # Apply action
-        if self.discrete_action:
-            self.device.set_processing_rate(action)
-        else:
-            self.device.set_processing_rate(action[0])
+        if type(action)==list and len(action)==1:
+            action = action[0]
+        self.device.set_processing_rate(action)
 
         # Update internal device data
         self.device.update(self.time_s)
 
         # Terminate if battery is discharged or chaged at 100%
         # or (self.stop_on_full_battery and self.device.get_battery_percentage() == 1)
-        terminated = self.device.get_battery_percentage() == 0
-        if terminated:
+        terminated = self.device.get_battery_percentage() == 0 or (self.episode_end_on_sunrise and self.device.is_sunrise(self.time_s))
+        if terminated and False:
             print(f"Battery discarged at time {self.time_s} s -> {self.get_human_uptime()}")
         # terminated |= self.time_s > 60*60*24*3
 
@@ -125,16 +134,21 @@ class NodeEnv(gym.Env):
         )/(self.device.base_load_energy_w + self.device.full_load_energy_w)
 
         battery_level = self.device.get_battery_percentage()  # ∈ [0, 1]
-        reward = 1 - abs(energy_norm - battery_level) #Se batt_level scende sotto lo 0.5, sono incentivato a non fare niente
+        #reward = 1 - abs(energy_norm - battery_level) #Se batt_level scende sotto lo 0.5, sono incentivato a non fare niente
         
         #Reward 2
         # reward = 0 #Only second part
-        if energy_norm > 0.9: #energy norm € (Base_Load, FullLoad)
-            reward += self.incentive_factor  # spinta a consumare
-        wh_for_next_step = self.device.base_load_energy_w * s2h(2*self.step_s)
-        if self.device.battery_current_capacity_wh < wh_for_next_step: #?Qual'è il valore ottimo?
-            reward -= 1  # forte penalità se scarica troppo
-
+        #if energy_norm > 0.9: #energy norm € (Base_Load, FullLoad)
+        #    reward += self.incentive_factor  # spinta a consumare
+        #wh_for_next_step = self.device.base_load_energy_w * s2h(2*self.step_s)
+        #if self.device.battery_current_capacity_wh < wh_for_next_step: #?Qual'è il valore ottimo?
+        #    reward -= 1  # forte penalità se scarica troppo
+        if self.device.get_battery_percentage() < 0.1:
+            reward = -10  # Penalità infinita se la batteria scende sotto il 10%
+        elif self.device.processing_rate > 0:
+            reward = 1
+        else:
+            reward = 0
         # Reward 3 MALE 169 immagini
         # wh_for_next_step = self.device.base_load_energy_w * s2h(self.incentive_factor*self.step_s)
         # min_batt_level = wh_for_next_step / self.device.battery_max_capacity_wh
@@ -164,11 +178,9 @@ class NodeEnv(gym.Env):
         #reward = reward+incentive_image_processing
 
         # Go to the future
-        self.time_s += self.step_s
+        #self.time_s += self.step_s
 
-        # Increase future data
-        solar_current_w = self.solar.get_solar_w(self.time_s)
-        self.device.set_pv_production_current_w(solar_current_w)
+
 
         """                
         if self.last_day_state == None:
@@ -188,7 +200,7 @@ class NodeEnv(gym.Env):
         truncated = solar_current_w < 0
 
         # Truncate after 30 days
-        truncated |= self.time_s - self.boot_time_s > 60*60*24*self.truncate_after_d
+        truncated |= self.get_uptime_s() >= 60*60*24*self.truncate_after_d
 
         info = self.__get_info()
         info["TimeLimit.truncated"] = truncated and not terminated
@@ -203,8 +215,7 @@ class NodeEnv(gym.Env):
         if self.discrete_state:
             battery_state = math.floor(
                 10*self.device.get_battery_percentage()/5)  # 0-3
-            day_slot = math.floor((self.time_s % 86400) / 86400.0 * 5)  # 0-9
-            return np.array([battery_state, day_slot, self.device.get_pv_production_normalized() > 0])
+            return np.array([battery_state])
         else:
             # panel_production_a = self.solar.get_solar_w(self.time_s+60*30)/12
             # future_panel_production_normalized = panel_production_a/2.31
@@ -215,10 +226,10 @@ class NodeEnv(gym.Env):
 
             return np.array(
                 [
-                    self.device.get_pv_production_normalized(),
+                    #self.device.get_pv_production_normalized(),
                     # self.device.get_energy_consumption_w()/(self.device.base_load_energy_w + self.device.full_load_energy_w),
                     self.device.get_battery_percentage(),
-                    ((self.time_s/3600) % 24) / 24.0,  # Seconds in a day
+                    #((self.time_s/3600) % 24) / 24.0,  # Seconds in a day
                     # future_panel_production_normalized,
                     # self.solar.get_solar_w(self.time_s-60*30)/12/2.31
                     # angle_deg,
