@@ -26,5 +26,6 @@ jobs:
       run: |
         python -m venv env
         ./env/bin/pip install -r requirements.txt
+        wget https://github.com/user-attachments/files/21213151/solcast2024.csv
         cd src
         ../env/bin/python -m unittest discover test "*_test.py"
