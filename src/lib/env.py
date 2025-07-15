@@ -65,21 +65,16 @@ class NodeEnv(gym.Env):
         self.last_day_state = None
         self.episode_end_on_sunrise = episode_end_on_sunrise
 
-        self.battery = 0.5
-        self.processed_images = 0
-
     def reset(self, *, seed=None, options=None):
         # Reset with random battery percentage, used for validation
         if options is not None and options["norandom"] == True:
-            self.device.reset(battery_percentage=0.5)
             self.boot_time_s = 5*60
+            self.device.reset(self.boot_time_s,battery_percentage=0.5)
         else:
-            self.device.reset(battery_percentage=rand.randrange(2, 8)/10)
             self.boot_time_s = rand.randint(5*60, 60*60*24*300)
+            self.device.reset(self.boot_time_s, battery_percentage=rand.randrange(2, 8)/10)
         self.time_s = self.boot_time_s
 
-        self.battery = rand.randrange(4,8)/10
-        self.processed_images = 0
         self.device.update(self.time_s)
 
         obs = self.__get_obs()
@@ -103,7 +98,7 @@ class NodeEnv(gym.Env):
 
         # Terminate if battery is discharged or chaged at 100%
         # or (self.stop_on_full_battery and self.device.get_battery_percentage() == 1)
-        terminated = self.device.get_battery_percentage() == 0 or (self.episode_end_on_sunrise and self.device.is_sunrise(self.time_s))
+        terminated = self.device.get_battery_percentage() == 0 
         if terminated and False:
             print(f"Battery discarged at time {self.time_s} s -> {self.get_human_uptime()}")
         # terminated |= self.time_s > 60*60*24*3
@@ -143,9 +138,7 @@ class NodeEnv(gym.Env):
         #wh_for_next_step = self.device.base_load_energy_w * s2h(2*self.step_s)
         #if self.device.battery_current_capacity_wh < wh_for_next_step: #?Qual'è il valore ottimo?
         #    reward -= 1  # forte penalità se scarica troppo
-        if self.device.get_battery_percentage() < 0.1:
-            reward = -10  # Penalità infinita se la batteria scende sotto il 10%
-        elif self.device.processing_rate > 0:
+        if self.device.processing_rate > 0:
             reward = 1
         else:
             reward = 0
@@ -200,7 +193,7 @@ class NodeEnv(gym.Env):
         truncated = solar_current_w < 0
 
         # Truncate after 30 days
-        truncated |= self.get_uptime_s() >= 60*60*24*self.truncate_after_d
+        truncated |= self.get_uptime_s() >= 60*60*24*self.truncate_after_d or (self.episode_end_on_sunrise and self.device.is_sunrise(self.time_s))
 
         info = self.__get_info()
         info["TimeLimit.truncated"] = truncated and not terminated
@@ -279,3 +272,15 @@ class NodeEnv(gym.Env):
 
     def get_amount_processed_images(self) -> int:
         return self.device.total_processed_images
+
+if __name__=="__main__":
+    env = NodeEnv(
+        "solcast2024.csv",
+        step_s=60,
+        stop_on_full_battery=False,
+        discrete_action=True,
+        discrete_state=False,
+        episode_end_on_sunrise=True
+    )
+    env.reset()
+    print("Batt",env.device.get_battery_percentage())
