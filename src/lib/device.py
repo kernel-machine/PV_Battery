@@ -1,4 +1,3 @@
-from collections.abc import Callable
 import matplotlib.pyplot as plt
 from lib.utils import s2h,h2s
 from enum import Enum
@@ -83,18 +82,20 @@ class Device:
         if time_s < self.last_update_s:
             return
         
-        if self.last_update_s == 0:
-            self.last_update_s = time_s
         update_delta_time_h = s2h(time_s-self.last_update_s)
+        update_delta_time_s = h2s(update_delta_time_h)
         self.last_update_s = time_s
 
         if self.processing_rate == 1 and self.processing_state == 0:
             self.task_start_time_s = time_s
             self.processing_state = 1
         elif self.processing_state == 1 and self.processing_rate == 0:
+            self.total_processed_images += update_delta_time_s//self.task_duration_s
             self.processing_state = 0
-            processing_time_s = time_s-self.task_start_time_s
-            self.total_processed_images += processing_time_s//self.task_duration_s
+        elif self.processing_state == 1 and self.processing_rate == 1:
+            self.total_processed_images += update_delta_time_s//self.task_duration_s
+        elif self.processing_state == 0 and self.processing_rate == 0:
+            pass
             # Conta da quanto tempo stai processando e conta le immagini
         """
         if (time_s > self.next_inference_time_s or time_s==0) and self.processing_rate > 0:
@@ -132,7 +133,8 @@ class Device:
         if not self.is_day and self.pv_instant_w > 0 and s2h(time_s-self.day_end_time_s) > 1: #1h of hysteresis
             self.is_day = True
             self.day_start_time_s = time_s
-        elif self.is_day and self.pv_instant_w == 0 and s2h(time_s-self.day_start_time_s) > 1:
+            #print(f"Day started at {self.day_start_time_s} s")
+        elif self.is_day and self.pv_instant_w == 0 and s2h(time_s-self.day_start_time_s) > 1: #1h of hysteresis
             self.is_day = False
             self.day_end_time_s = time_s
             self.plot_added = False
@@ -175,6 +177,12 @@ class Device:
         self.processing_rates.append(self.processing_rate)
         self.times.append(time_s)
 
+    def is_sunrise(self, time_s: int) -> bool:
+        return self.is_day and time_s == self.day_start_time_s
+    
+    def is_sunset(self, time_s: int) -> bool:
+        return not self.is_day and time_s == self.day_end_time_s
+    
     def get_energy_consumption_w(self) -> float:
         return (self.base_load_energy_w + self.full_load_energy_w * self.processing_rate)
 
@@ -230,22 +238,4 @@ class Device:
     def is_inference_finished(self, time_s:int) -> bool:
         return self.next_inference_time_s == 0
     
-if __name__ == "__main__":
-    device = Device(
-        base_load_energy_ma=50,
-        full_load_energy_ma=1000,
-        battery_max_capacity_mah=3300,
-        battery_nominal_voltage_v=3.7,
-        task_duration_s=1
-    )
-    device.set_pv_production_current_w(20)
-    device.set_processing_rate(1)
-    device.update(0)
-    device.update(5) #5 processate
-    device.update(7) #7 processate
-    device.update(5) # Skippato
-    device.set_processing_rate(0) #t=10
-    device.update(10) # 10 Processate
-    device.update(12) # 7 Processate
-    print(device.total_processed_images)
-    device.show_plot(show=False, save=True)
+
