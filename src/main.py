@@ -1,156 +1,219 @@
-from stable_baselines3 import PPO, DQN, A2C
+from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.env_checker import check_env
-from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnRewardThreshold
-from torch.utils.tensorboard import SummaryWriter
-from lib.env import NodeEnv
-from lib.pid_controller import PIDController
-import random
-import datetime
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
+from lib.env_day import EnvDay, StateContent
+import matplotlib.pyplot as plt
 import argparse
+from datetime import datetime
+import os
+import json
+import torch
+import numpy as np
+import random
+from stable_baselines3.common.monitor import Monitor
 
-args = argparse.ArgumentParser()
-args.add_argument("--short_training", default=False, action="store_true", help="Set to have a shorter training")
-args.add_argument("--n_env", type=int, default=4, help="Number of environment to train in parallel")
-args.add_argument("--val", default=False, action="store_true", help="Validate the model without training")
-args.add_argument("--discrete_action", default=False, action="store_true", help="Use discrete actions instead of continuous")
-args.add_argument("--discrete_state", default=False, action="store_true", help="Use discrete state space instead of continuous")
-args.add_argument("--alg",type=str,required=True,help="RL algoirthm name", choices=["dqn","ppo","a2c"])
-args.add_argument("--batch_size",type=int, default=128, help="Batch size for model update")
-args.add_argument("--exploration_fraction", type=float, default=0.1, help="Exploration fraction")
-args.add_argument("--truncate_after", type=int, default=30, help="Truncate episode after X days")
-args.add_argument("--incentive_factor", type=float, default=0.3, help="Incentive factor for reward") #depends by the reward
-args.add_argument("--img_name",type=str, default="")
-args.add_argument("--pid",default=False, action="store_true", help="Use PID controller instead of RL")
-args.add_argument("--ppo_epochs",default=10, type=int, help="Epochs for PPO")
-args = args.parse_args()
-SEED = 1234
-STEP_S = 60*5 # Step size in seconds
+
+'''
+Stato solo batteria, epochs 5, 3110 immagini, Update model on done or terminated
+
+'''
+parser = argparse.ArgumentParser()
+parser.add_argument("--steps",default=10, required=False, type=int)
+parser.add_argument("--update_steps",default=512, required=False, type=int)
+parser.add_argument("--epochs",default=5, required=False, type=int)
+parser.add_argument("--alg", default="ppo", choices=["ppo","a2c"])
+parser.add_argument("--use_solar", default=False, action="store_true")
+parser.add_argument("--use_month", default=False, action="store_true")
+parser.add_argument("--use_hour", default=False, action="store_true")
+parser.add_argument("--use_day", default=False, action="store_true")
+parser.add_argument("--use_forecast", default=False, action="store_true")
+parser.add_argument("--use_humidity", default=False, action="store_true")
+parser.add_argument("--use_cloud", default=False, action="store_true")
+parser.add_argument("--use_pressure", default=False, action="store_true")
+parser.add_argument("--run_folder", default="../runs", type=str)
+parser.add_argument("--gpu", default=False, action="store_true")
+parser.add_argument("--val",default=False, action="store_true")
+parser.add_argument("--model",default=None, type=str)
+parser.add_argument("--lr",type=float, default=0.0003)
+parser.add_argument("--n_env", default=1, type=int, required=False)
+parser.add_argument("--term_days", default=7, type=int, required=False)
+args = parser.parse_args()
+SEED = 42
+
+torch.manual_seed(SEED)
 random.seed(SEED)
-run_identifier = f"{args.alg}_b{args.batch_size}_n{args.n_env}_{args.img_name}"
+np.random.seed(SEED)
 
-# log_dir = "logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-# writer = SummaryWriter(log_dir=log_dir)
+if not args.val and args.run_folder == "../runs":
+    folders = os.listdir("../runs")
+    folders = list(filter(lambda x:x.isdigit(), folders))
+    last_id = max(map(lambda x:int(x),folders))
+    new_id = last_id+1
+    args.run_folder = os.path.join(args.run_folder,str(new_id))
 
-if not args.pid and not args.val:
-    if args.discrete_state:
-        env = NodeEnv("../solcast2024.csv", step_s=STEP_S, stop_on_full_battery=True, discrete_action=args.discrete_action, discrete_state=args.discrete_state, truncate_alter_d=args.truncate_after, incentive_factor=args.incentive_factor)
-        model = DQN(
-            "MlpPolicy",
-            env,
-            verbose=2,
-        )
-        days = 365
-        total_steps = (days * 24 * 60 * 60 // STEP_S)  # Total steps for training
+if args.run_folder is not None:
+    if os.path.exists(args.run_folder) and not args.val:
+        print("Run folder already exists!")
+        exit(0)
     else:
-        vec_env = make_vec_env(
-            NodeEnv,
-            n_envs=args.n_env,
-            seed=SEED,
-            env_kwargs={"csv_solar_data_path": "../solcast2024.csv", "step_s": STEP_S, "stop_on_full_battery": True, "discrete_state": args.discrete_state,"discrete_action": args.discrete_action, "truncate_alter_d" : args.truncate_after, "incentive_factor":args.incentive_factor},
-        )
-        if args.alg == "ppo":
-            model = PPO(
-                "MlpPolicy",
-                vec_env,
-                #tensorboard_log=log_dir,
-                verbose=2,
-                device="cpu",
-                #n_steps=(24*60*60)//STEP_S, # 1 Day
-                seed=SEED,
-                batch_size=args.batch_size,
-                n_epochs=args.ppo_epochs
-            # policy_kwargs=dict(log_std_init=-2),
-            )
-        elif args.alg == "a2c":
-            model = A2C(
-                "MlpPolicy",
-                vec_env,
-                n_steps=(24*60*60)//STEP_S, # 1 Day
-                verbose=2,
-                seed=SEED,
-                device="cpu",
-            )
-        elif args.alg == "dqn":
-            model = DQN(
-                "MlpPolicy",
-                vec_env,
-                verbose=2,
-                learning_starts=10000,
-                batch_size=args.batch_size,
-                exploration_fraction=args.exploration_fraction,
-                #exploration_initial_eps=0.8,
-                #exploration_final_eps=0.01,
-                seed=SEED
-                )
-        days = 365
-        total_steps = (days * 24 * 60 * 60 // STEP_S) * args.n_env  # Total steps for training
+        os.makedirs(args.run_folder, exist_ok=True)
+        print("Files were saved on",args.run_folder)
 
-        # if args.short_training:
-        #     callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=2000, verbose=1)
-        #     eval_callback = EvalCallback(eval_env, callback_on_new_best=callback_on_best, verbose=1)
-        # else:
-        #     eval_callback = None
+if args.run_folder is not None and not args.val:
+    file = os.path.join(args.run_folder,"args.json")
+    with open(file, 'w', encoding='utf-8') as f:
+        j = json.dumps(args.__dict__, ensure_ascii=False, indent=4)
+        f.write(j)
 
-    if not args.val:
-        model.learn(total_timesteps=total_steps, progress_bar=True, callback=None)
-        model.save(f"runs/ppo_node_env_{run_identifier}")
+state_content = 0
+if args.use_solar:
+    state_content ^= StateContent.SOLAR
+if args.use_month:
+    state_content ^= StateContent.MONTH
+if args.use_hour:
+    state_content ^= StateContent.HOUR
+if args.use_day:
+    state_content ^= StateContent.DAY
+if args.use_forecast:
+    state_content ^= StateContent.FORECAST
+if args.use_pressure:
+    state_content ^= StateContent.PRESSURE
+if args.use_cloud:
+    state_content ^= StateContent.CLOUD
+if args.use_humidity:
+    state_content ^= StateContent.HUMIDITY
 
-if True: #val
-    env = NodeEnv("../solcast2025.csv", step_s=STEP_S, stop_on_full_battery=False, discrete_action=args.discrete_action, discrete_state=args.discrete_state, incentive_factor=args.incentive_factor, truncate_alter_d=args.truncate_after)
+class MyEvalCallBack(BaseCallback):
+    def __init__(self, env : EnvDay, best_model_path:str, eval_freq:int = 0, verbose = 0):
+        super().__init__(verbose)
+        self.env = env
+        self.best_images = 0
+        self.best_model_path = best_model_path
+        self.eval_freq = eval_freq
+
+    def _on_step(self):
+        if self.n_calls % self.eval_freq == 0:
+            done = False
+            obs, _ = self.env.reset()
+            while not done:
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, reward, done, truncated, info = self.env.step(action)
+                if done:
+                    if self.env.processed_images > self.best_images:
+                        self.best_images = self.env.processed_images
+                        self.model.save(self.best_model_path)
+                        print(f"New best model with {self.env.processed_images} processed images")
+        return True
+
+test_env = EnvDay(csv_solar_data_path="../solcast2025.csv", step_s=5*60, state_content=state_content, random_reset=False, terminated_days=args.term_days)
+#eval_env = Monitor(test_env)
+eval_callback = MyEvalCallBack(test_env, best_model_path=os.path.join(args.run_folder,'best_model'), eval_freq=100000)
+
+device = torch.device("cuda:0") if args.gpu else torch.device("cpu")
+#env = EnvDay(csv_solar_data_path="../solcast2024.csv", step_s=5*60, state_content=state_content)
+vec_env = make_vec_env(lambda: EnvDay(csv_solar_data_path="../solcast2024.csv", step_s=5*60, state_content=state_content, terminated_days=args.term_days), n_envs=args.n_env)
+model = PPO(
+    "MlpPolicy",
+    vec_env,
+    device="cpu",
+    n_epochs=args.epochs,
+    n_steps=args.update_steps,
+    learning_rate=args.lr,
+    verbose=2,
+    tensorboard_log=os.path.join(args.run_folder,"tensorboard")
+    )
+
+if not args.val:
+    model.learn(total_timesteps=args.steps, progress_bar=True, callback=eval_callback)
+    if args.run_folder is not None:
+        model_path = os.path.join(args.run_folder,"last.pth")
+        print("Model saved in",model_path)
+        model.save(model_path)
+
+    print("Trainign completed")
+
+if args.val and args.model is not None:
+    print("Loading model",args.model)
+    model = PPO.load(args.model)
+else:
+    best_model_path = os.path.join(args.run_folder, 'best_model')
+    print("Loading model from",best_model_path)
+    model = PPO.load(best_model_path)
     
-    if args.pid:
-        controller = PIDController(kp=100, ki=0, dt=0)
-        battery_setpoint = 0.2  # Desired battery level (80%)
-    else:
-        model = PPO.load(f"runs/ppo_node_env_{run_identifier}", verbose=1) 
-    # model.set_parameters(f"runs/ppo_node_env_{run_identifier}")
+def save_plot(battery_levels: list, recharges: list, consumptions:list, times:list, forecast:list, path:str):
+    # --- Plotting ---
+    # sunrises = list(filter(lambda x: x[1] in sunrises , enumerate(times)))
+    # sunrises = list(map(lambda x:x[0], sunrises))
 
-    obs = env.reset(seed=SEED, options={"norandom":True})[0]
+    plt.figure(figsize=(12, 5))
+    plt.plot(battery_levels, label="Battery Level")
+    plt.plot(recharges, label="Recharge Amount")
+    plt.plot(consumptions, label="Energy Consumed")
+    plt.plot(forecast, label="Energy forecast")
+    #plt.vlines(sunrises,ymin=0,ymax=1,colors="violet")
+    start_time = min(times).strftime("%H:%M %d/%m/%y")
+    end_time = max(times).strftime("%H:%M %d/%m/%y")
+    plt.title(f"Simulation from {start_time} untill {end_time}")
+    plt.xlabel("Time Step")
+    plt.ylabel("Energy")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig(path)
 
-    min_battery_level = 1
-    rewards = []
-    days_14_reached = False
+processed_images = []
+#for w in range(0,120,1):
+test_obs,_ = test_env.reset(options={"norandom":True, "start_day":w})
+battery_levels, recharges, consumptions, times, forecast = [], [], [], [], []
+battery_levels.append(test_obs[0])
+done = False
+rewards = []
+is_plotted = False
+steps = 0
+plot_time = 60*60*24*31
+unprocessed_images = 0
+while True:
+    action,_ = model.predict(test_obs, deterministic=True)
+    test_obs, reward, done, terminated, info = test_env.step(action)
+    rewards.append(reward)
 
-    while True:
-        if args.pid:
-            error = battery_setpoint - env.device.get_battery_percentage()
-            control_output = -controller.update(error)
-            action = 1 if control_output > 0 else 0
-            action = [action]  # Ensure action is a list for the environment
-            # Ensure action is a list for the environment
-        else:
-            action, _ = model.predict(obs)
-        
-        new_obs, reward, done, _, __ = env.step(action)
-        rewards.append(reward)
-        if env.get_uptime_s() % STEP_S == 0:
-            print(env.get_uptime_s()//60," | Obs:", obs, "Action:", action, "Reward:", reward, end="\r")
-        obs = new_obs
+    if steps % 1000 == 0:
+        print("Processing day",test_env.get_uptime_s()//(60*60*24),"of 121 | Processed images",test_env.processed_images, end="\r")
+    if args.run_folder != "../runs" and (test_env.get_uptime_s() >= plot_time or done):
+        plot_time += 60*60*24*31
+        month = int(test_env.get_uptime_s() // (60*60*24*31))
+        print("Plotting", month)
+        # Limit da for 1 week
+        steps_for_1_week = (60*60*24*7)//300
+        battery_levels = battery_levels[:steps_for_1_week]
+        recharges = recharges[:steps_for_1_week]
+        consumptions = consumptions[:steps_for_1_week]
+        forecast = forecast[:steps_for_1_week]
+        times = times[:steps_for_1_week]
+        #sunrises = list(filter(lambda x:x<=max(times), sunrises))
+        # Creating folders
+        image_folder = os.path.join(args.run_folder,"images")
+        os.makedirs(image_folder, exist_ok=True)
+        img_file = os.path.join(image_folder,f"image{month}_{w}.jpg")
 
-        battery_level = env.device.get_battery_percentage()    
-        if battery_level < min_battery_level:
-            min_battery_level = battery_level
+        save_plot(battery_levels, recharges, consumptions, times, forecast, img_file)
+        battery_levels, recharges, consumptions, times, forecast = [], [], [], [], []
+    if done:
+        print()
+        print("BATTERY DEPLETED!")
+        break
+    
+    battery_levels.append(test_obs[0])
+    recharges.append(info["recharge"])
+    consumptions.append(info["cons"])
+    times.append(info["time"])
+    if args.use_forecast:
+        forecast.append(test_obs[-1])
+    steps+=1
 
-        if not days_14_reached and env.get_uptime_s() > (60 * 24 * 60 * 3):  # 14 days
-            print("Reached 14 days of simulation")
-            env.device.show_plot(show=False, save=True, filename=f"img/14_days_model_{run_identifier}.png", additional_data=rewards)
-            days_14_reached = True
-        if done:
-            env.device.show_plot(show=False, save=True, filename=f"img/14_days_model_{run_identifier}_complete.png", additional_data=rewards, start_from=60 * 24 * 60 * 118)
-            break
+print("Ttime reached", test_env.get_human_uptime(), test_env.get_uptime_s())
+print("Final reward", sum(rewards))
+print("Processed images", test_env.processed_images)
+print("Unprocessed images",unprocessed_images)
+processed_images.append(test_env.processed_images)
 
-
-    print(f"Lifetime: {env.time_s} s")
-    env.device.show_plot(show=False, save=True, filename="full")
-
-    print(f"Processed images: {env.get_amount_processed_images()}")
-    print(f"Efficiency: {env.device.get_energy_efficiency()}")
-    print(f"Total produced energy: {env.device.total_produced_energy_wh} mAh")
-    print(f"Total consumed energy: {env.device.total_consumed_energy_wh} mAh")
-    print(f"Total wasted energy: {env.device.total_wasted_energy_wh} mAh")
-    print(f"Uptime: {env.get_human_uptime()}")
-    print(f"Minimum battery level: {min_battery_level * 100:.2f}%")
-    print(f"Battery level: {env.device.get_battery_percentage()}")
-    print(f"Number of steps: {env.number_of_steps} {env.number_of_high} {env.number_of_low}")
+print(processed_images)
