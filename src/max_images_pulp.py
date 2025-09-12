@@ -2,51 +2,53 @@ import pulp as pl
 from lib.solar import solar
 from max_images import save_plot
 
-panel_area_m2 = 0.55 * 0.51  # m2
-efficiency = 0.1426
-max_power_w = 40  # W
+PANEL_AREA_M2 = 0.55 * 0.51  # m2
+EFFICIENCY = 0.1426
+MAX_POWER_W = 40  # W
 solar = solar.Solar(
     "../solcast2025.csv",
-    scale_factor=panel_area_m2 * efficiency,
-    max_power=max_power_w,
+    scale_factor=PANEL_AREA_M2 * EFFICIENCY,
+    max_power=MAX_POWER_W,
     enable_cache=True,
 )
 
+MAX_BATTERY_J = 6.6 * 3.7 * 3600
+DELTA_T = 5 * 60
+E_IDLE_J = 5 * 0.05 * DELTA_T
+E_PROCESSING_J = (5 * DELTA_T) - E_IDLE_J
+
 def find_optimal(start_day_:int):
     # Parametri
-    max_battery_j = 6.6 * 3.7 * 3600
-    delta_t = 5 * 60
-    e_idle_j = 5 * 0.05 * delta_t
-    e_img_j = (5 * delta_t) - e_idle_j
+
     T_max = (1*24*60)//5#34560
     start_day = start_day_*24*60*60
-    M = 10 * max_battery_j  # big-M, deve essere molto più grande della batteria
+    M = 10 * MAX_BATTERY_J  # big-M, deve essere molto più grande della batteria
 
     def E_s(t):
-        return solar.get_solar_w(start_day + delta_t + t * delta_t) * delta_t
+        return solar.get_solar_w(start_day + DELTA_T + t * DELTA_T) * DELTA_T
 
     # Problema
     prob = pl.LpProblem("myProblem", pl.LpMaximize)
 
     # Variabili decisionali
     x = pl.LpVariable.dicts("x", range(1, T_max), cat="Binary")
-    E = pl.LpVariable.dicts("E", range(T_max), lowBound=0, upBound=max_battery_j, cat="Continuous")
+    E = pl.LpVariable.dicts("E", range(T_max), lowBound=0, upBound=MAX_BATTERY_J, cat="Continuous")
     y = pl.LpVariable.dicts("y", range(1, T_max), cat="Continuous")   # livello teorico prima del min
     z = pl.LpVariable.dicts("z", range(1, T_max), cat="Binary")       # decide se saturare o no
 
     # Condizione iniziale
-    prob += E[0] == max_battery_j * 0.5, "Condizione_iniziale"
+    prob += E[0] == MAX_BATTERY_J * 0.5, "Condizione_iniziale"
 
     # Vincoli ricorsivi con min linearizzato
     for t in range(1, T_max):
         # livello teorico senza taglio
-        prob += y[t] == E[t - 1] + E_s(t) - e_idle_j - e_img_j * x[t], f"Def_y_{t}"
+        prob += y[t] == E[t - 1] + E_s(t) - E_IDLE_J - E_PROCESSING_J * x[t], f"Def_y_{t}"
 
         # vincoli per E[t] = min(y[t], max_battery_j)
         prob += E[t] <= y[t], f"Min1_{t}"
-        prob += E[t] <= max_battery_j, f"Min2_{t}"
+        prob += E[t] <= MAX_BATTERY_J, f"Min2_{t}"
         prob += E[t] >= y[t] - M * (1 - z[t]), f"Min3_{t}"
-        prob += E[t] >= max_battery_j - M * z[t], f"Min4_{t}"
+        prob += E[t] >= MAX_BATTERY_J - M * z[t], f"Min4_{t}"
 
     # Funzione obiettivo (massimizza la somma degli x_t)
     prob += pl.lpSum(x[t] for t in range(1, T_max)), "Somma_X"
@@ -60,20 +62,47 @@ def find_optimal(start_day_:int):
     # for t in range(1, T_max):
     #     print(f"x[{t}] = {x[t].value()},   E[{t}] = {E[t].value()},   y[{t}] = {y[t].value()},   z[{t}] = {z[t].value()}")
 
-    battery_levels = [1 if z[t].value()==0 else E[t].value()/max_battery_j for t in range(1,T_max)]
-    save_plot(
-        battery_levels=battery_levels,
-        recharges=[E_s(t)/(max_power_w*delta_t) for t in range(1,T_max)],
-        consumptions=[x[t].value() for t in range(1,T_max)],
-        times=[],
-        sunrises=[],
-        path=f"pulp/max_images_pulp_{start_day_}.png"
-    )
-    return sum([x[t].value() for t in range(1,T_max)])
+    battery_levels = [1 if z[t].value()==0 else E[t].value()/MAX_BATTERY_J for t in range(1,T_max)]
+    # save_plot(
+    #     battery_levels=battery_levels,
+    #     recharges=[E_s(t)/(MAX_POWER_W*DELTA_T) for t in range(1,T_max)],
+    #     consumptions=[x[t].value() for t in range(1,T_max)],
+    #     times=[],
+    #     sunrises=[],
+    #     path=f"pulp/max_images_pulp_{start_day_}.png"
+    # )
+    return sum([x[t].value() for t in range(1,T_max)]), [bool(x[t].value()) for t in range(1,T_max)]
 
 
-processed_images = []
-for w in range(0,120,1):
-    p = find_optimal(w)
-    processed_images.append(int(p))
-print(processed_images)
+TEST_ALL_DAYS = False
+if TEST_ALL_DAYS:
+    processed_images = []
+    for d in range(0,120,1):
+        p = find_optimal(d)
+        processed_images.append(int(p))
+    print(processed_images)
+else:
+    p, l = find_optimal(3)
+    print(f"Processed images {p}")
+
+def check_optimal(processing_slots:list[bool], start_day:int):
+    start_day = start_day*24*60*60
+    def E_s(t):
+        return solar.get_solar_w(start_day + DELTA_T + t * DELTA_T) * DELTA_T
+    
+    for i in range(len(processing_slots)):
+        if not processing_slots[i]:
+            processing_slots[i] = True
+            break
+    
+    battery_j = MAX_BATTERY_J*0.5
+    for t in range(1,len(processing_slots)+1):
+        battery_j += E_s(t) - E_IDLE_J - processing_slots[t-1] * E_PROCESSING_J
+        battery_j = min(battery_j, MAX_BATTERY_J)
+        if battery_j < 0:
+            print("Negative battery", battery_j)
+    print("Final battery",battery_j)
+    print("Processed images",sum(processing_slots))
+
+check_optimal(l,3)
+exit(0)
