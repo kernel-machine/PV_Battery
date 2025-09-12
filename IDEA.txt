@@ -40,3 +40,47 @@ Devi dimoistare che non riesci più ad accumulare energia perchè prima che arri
  e abbassandoti ancora di più avresti spento il dispositivo. Perciò caro luca tieni in considerazione che ci possono essere consi
  in cui devi per forza spegare energia
  
+ #BEST
+[14_-1_2NegBattE10]python -u train2.py --epochs 10 --use_solar --use_hour --steps 1024
+
+[1+b_-1_-2b]python -u train2.py --epochs 10 --use_solar --use_month --use_hour --steps 2048 --gpu
+
+BEST 26
+
+97   running    /tmp/ts-out.ZRHRPR                           python -u main.py --use_solar --use_hour --use_month --steps 1024
+98   running    /tmp/ts-out.dGaVSO                           python -u main.py --use_solar --use_hour --use_month --steps 1024 --epochs 10
+99   running    /tmp/ts-out.N08IgT                           python -u main.py --use_solar --use_hour --use_month --steps 2048
+100  running    /tmp/ts-out.q1BCdE                           python -u main.py --use_solar --use_hour --use_month --steps 2048 --epochs 10
+
+89   finished   /tmp/ts-out.DS2eet   0        8247.00/24620.94/4.14 [Baseline]python -u main.py --steps 1000
+90   finished   /tmp/ts-out.lxHlzD   0        9527.59/29424.59/5.08 [Baseline]python -u main.py --steps 1000 --use_solar
+91   finished   /tmp/ts-out.m5B5b5   0        11733.86/34922.69/6.49 [Baseline]python -u main.py --steps 1000 --use_solar --use_hour
+92   finished   /tmp/ts-out.Cg34jx   0        12654.98/36768.51/6.85 [Baseline]python -u main.py --steps 1000 --use_solar --use_hour --use_month
+96   finished   /tmp/ts-out.vsSmH6   0        14577.32/56287.96/9.41 [Baseline]python -u main.py --steps 2000 --use_solar --use_hour --epochs 10
+94   finished   /tmp/ts-out.exSv23   0        14955.90/53833.68/9.06 [Baseline]python -u main.py --steps 2000 --use_solar --use_hour --use_month --epochs 10
+93   finished   /tmp/ts-out.uQNafQ   0        14994.86/47897.26/7.84 [Baseline]python -u main.py --steps 2000 --use_solar --use_hour --use_month
+95   finished   /tmp/ts-out.KBxy73   0        15310.27/59287.64/10.99 [Baseline]python -u main.py --steps 2000 --use_solar --use_hour --use_month --epochs 20
+
+
+LP [182, 114, 117, 174, 196, 177, 197, 120, 128, 210, 225, 227]
+RL [168, 109, 111, 159, 178, 162, 180, 114, 121, 191, 206, 208]
+
+LP
+[182, 158, 51, 177, 136, 157, 177, 172, 134, 178, 114, 161, 171, 185, 177, 169, 178, 76, 89, 130, 117, 91, 174, 184, 183, 176, 181, 170, 176, 189, 174, 187, 166, 133, 191, 188, 195, 182, 128, 184, 196, 191, 187, 140, 161, 174, 198, 191, 193, 121, 177, 202, 203, 198, 120, 164, 185, 203, 201, 112, 197, 209, 208, 209, 208, 204, 191, 190, 193, 206, 120, 208, 192, 196, 211, 213, 216, 211, 214, 211, 128, 203, 209, 218, 217, 187, 196, 210, 220, 213, 210, 217, 221, 222, 222, 223, 223, 222, 223, 217, 225, 222, 203, 194, 219, 222, 224, 223, 228, 224, 227, 229, 225, 219, 230, 229, 216, 219, 222, 231]
+
+RL 
+[168, 144, 46, 162, 129, 147, 163, 157, 128, 163, 109, 149, 156, 170, 162, 155, 163, 71, 84, 122, 111, 88, 159, 169, 168, 161, 166, 154, 162, 174, 159, 172, 151, 126, 174, 172, 178, 167, 123, 168, 178, 175, 171, 123, 153, 158, 182, 176, 178, 116, 162, 186, 185, 182, 115, 156, 169, 187, 183, 106, 180, 191, 191, 191, 191, 186, 175, 171, 176, 189, 114, 190, 174, 177, 194, 195, 198, 193, 196, 194, 121, 186, 192, 200, 200, 169, 180, 194, 202, 194, 191, 199, 202, 203, 204, 204, 204, 203, 205, 199, 206, 203, 184, 176, 200, 204, 206, 203, 209, 205, 208, 210, 207, 200, 211, 211, 199, 200, 204, 212]
+
+[0.92, 0.95, 0.94, 0.91, 0.90, 0.91, 0.91, 0.95, 0.94, 0.90, 0.91, 0.91]
+
+TODO:
+
+[OK]    Verifica che PULP sia ottimo,
+        Dopo aver assegnato gli x[t], fai una simulazione con quelli x[t] e flippalo uno,
+        Dovresti violare tutto o finire con troppa energia
+
+Aggiungi previsioni e vedi come influenzano il modello
+Se non riesci ad ottenerle ottienile artificialmente dal dal dataset
+
+Prova altri algoritmi diversi da PPO
+

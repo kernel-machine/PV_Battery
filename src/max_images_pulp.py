@@ -1,6 +1,7 @@
 import pulp as pl
 from lib.solar import solar
 from max_images import save_plot
+from random import randint
 
 PANEL_AREA_M2 = 0.55 * 0.51  # m2
 EFFICIENCY = 0.1426
@@ -82,7 +83,7 @@ if TEST_ALL_DAYS:
         processed_images.append(int(p))
     print(processed_images)
 else:
-    p, l = find_optimal(3)
+    p, l = find_optimal(6)
     print(f"Processed images {p}")
 
 def check_optimal(processing_slots:list[bool], start_day:int):
@@ -90,10 +91,16 @@ def check_optimal(processing_slots:list[bool], start_day:int):
     def E_s(t):
         return solar.get_solar_w(start_day + DELTA_T + t * DELTA_T) * DELTA_T
     
-    for i in range(len(processing_slots)):
-        if not processing_slots[i]:
-            processing_slots[i] = True
-            break
+    # Take first
+    if True:
+        for i in range(len(processing_slots)):
+            if not processing_slots[i]:
+                processing_slots[i] = True
+                break
+    else: # Take random
+        all_negatives = list(filter(lambda x: not x[1],enumerate(processing_slots)))
+        random_false_index = all_negatives[randint(0,len(all_negatives)-1)][0]
+        processing_slots[random_false_index] = not processing_slots[random_false_index]
     
     battery_j = MAX_BATTERY_J*0.5
     for t in range(1,len(processing_slots)+1):
@@ -104,5 +111,5 @@ def check_optimal(processing_slots:list[bool], start_day:int):
     print("Final battery",battery_j)
     print("Processed images",sum(processing_slots))
 
-check_optimal(l,3)
+check_optimal(l,6)
 exit(0)
