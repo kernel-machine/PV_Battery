@@ -5,3 +5,7 @@ __pycache__
 logs
 env
 *.png
+runs
+models
+pulp
+images

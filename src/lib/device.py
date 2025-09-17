@@ -184,7 +184,7 @@ class Device:
         return not self.is_day and time_s == self.day_end_time_s
     
     def get_energy_consumption_w(self) -> float:
-        return (self.base_load_energy_w + self.full_load_energy_w * self.processing_rate)
+        return self.last_energy_used_wh
 
     def get_battery_percentage(self) -> float:
         return self.battery_current_capacity_wh/self.battery_max_capacity_wh

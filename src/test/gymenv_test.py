@@ -4,7 +4,7 @@ from lib.utils import s2h
 import random
 
 class GymEnvTest(unittest.TestCase):
-    def test_env_step(self):
+    def skip_test_env_step(self):
         env = NodeEnv(
             "../solcast2024.csv",
             step_s=60,

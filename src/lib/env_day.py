@@ -12,14 +12,15 @@ from enum import IntEnum
 # from filterpy.kalman import ExtendedKalmanFilter
 
 class StateContent(IntEnum):
-    SOLAR   = 1<<0
-    MONTH   = 1<<1
-    HOUR    = 1<<2
-    DAY     = 1<<3
-    FORECAST= 1<<4
-    HUMIDITY= 1<<5
-    PRESSURE= 1<<6
-    CLOUD   = 1<<7
+    SOLAR           = 1<<0
+    MONTH           = 1<<1
+    HOUR            = 1<<2
+    DAY             = 1<<3
+    NEXT_DAY        = 1<<4
+    HUMIDITY        = 1<<5
+    PRESSURE        = 1<<6
+    CLOUD           = 1<<7
+    SUN_PREDICTION  = 1<<8
 
 class EnvDay(gym.Env):
     def __init__(self, csv_solar_data_path: str,
@@ -43,16 +44,16 @@ class EnvDay(gym.Env):
         self.battery_max_j = battery_wh*3600
         self.battery_curr_j = self.battery_max_j*0.5
         self.time_s = 5*60
-        self.max_avg_day = max(self.solar.get_day_avg(x) for x in range(366))
-        self.observation_space = gym.spaces.Box(0.0, 1.0, [len(self.__get_obs())])
-        self.action_space = gym.spaces.Discrete(2)
         self.step_size_s = step_s
+        self.max_avg_day = max(self.solar.get_day_avg(x) for x in range(366))
         self.device_idle_energy_w = device_idle_energy_w
         self.device_full_energy_w = device_full_energy_w
         self.device_idle_energy_j = device_idle_energy_w*self.step_size_s
         self.device_full_energy_j = device_full_energy_w*self.step_size_s
         self.processed_images = 0
         self.haversted_energy_j = self.battery_curr_j
+        self.observation_space = gym.spaces.Box(0.0, 1.0, [len(self.__get_obs()[0])])
+        self.action_space = gym.spaces.Discrete(2)
 
         if seed is not None: 
             random.seed(seed)
@@ -74,8 +75,8 @@ class EnvDay(gym.Env):
         self.time_s = self.boot_time_s
         self.processed_images = 0
         self.haversted_energy_j = self.battery_curr_j
-        obs = self.__get_obs()
-        return obs, {}
+        obs, fields = self.__get_obs()
+        return obs, {"fields":fields}
 
     
     def step(self, action):
@@ -100,50 +101,65 @@ class EnvDay(gym.Env):
         efficiency = (self.device_full_energy_j*self.processed_images)/self.haversted_energy_j
         #reward = math.log10(efficiency)+1
         reward = emphasize_diff_sigmoid(efficiency)
-        # Incentive to discarge the battery
-        #reward += (1-action)*(1-(self.battery_curr_j/self.battery_max_j))
-        #is_sunrise = self.solar.is_sunrise(self.time_s,self.step_size_s)
         terminated = self.get_uptime_s() > 60*60*24*self.terminated_days
         done = self.battery_curr_j<=0
 
         self.time_s += self.step_size_s
 
-        obs = self.__get_obs()
-        info = {"recharge":solar_power_w/40, "cons":action, "time":datetime}
+        obs, fields = self.__get_obs()
+        info = {"fields":fields, "cons":action, "time":datetime}
 
         return obs, reward, done, terminated, info
 
     def render(self, mode="human"):
         pass
 
-    def __get_obs(self):
+    def __get_obs(self)->tuple[np.array,list]:
+        fields = [
+            "Battery"
+        ]
         arr = [
             self.battery_curr_j/self.battery_max_j,
         ]
         if self.state_content & StateContent.SOLAR:
             arr.append(self.solar.get_solar_w(self.time_s)/40)
+            fields.append("Solar")
         if self.state_content & StateContent.MONTH:
             arr.append(self.solar.get_datetime(self.time_s).month/12)
+            fields.append("Month")
         if self.state_content & StateContent.HOUR:
-            m = 0#self.solar.get_datetime(self.time_s).minute #0-59
+            #m = self.solar.get_datetime(self.time_s).minute #0-59
             h = self.solar.get_datetime(self.time_s).hour #0-23
             arr.append(h/23)
+            fields.append("Hour")
         if self.state_content & StateContent.DAY:
             arr.append(self.solar.get_datetime(self.time_s).timetuple().tm_yday/366)
-        if self.state_content & StateContent.FORECAST:
+            fields.append("Day")
+        if self.state_content & StateContent.NEXT_DAY:
             day = self.solar.get_datetime(self.time_s).timetuple().tm_yday
-            next_day_sun = 0# self.solar.get_day_avg(day+1)/self.max_avg_day
+            next_day_sun = self.solar.get_day_avg(day+1)/self.max_avg_day
             arr.append(next_day_sun)
+            fields.append("Next day")
+        if self.state_content & StateContent.SUN_PREDICTION:
+            interval_slot_m = 120
+            sun_w = self.solar.get_future_prediction_w(self.time_s, self.step_size_s, interval_slot_m)
+            sun_energy_j = sun_w*interval_slot_m*60
+            normalized_energy_j = sun_energy_j/(self.solar.max_power_w*interval_slot_m*60)
+            arr.append(normalized_energy_j)
+            fields.append("Sun prediction")
         if self.state_content & StateContent.PRESSURE:
-            val = 0#self.solar.get_info(self.time_s,"pressure")
+            val = self.solar.get_info(self.time_s,"pressure")
             arr.append(val/1000)
+            fields.append("Pressure")
         if self.state_content & StateContent.HUMIDITY:
             val = self.solar.get_info(self.time_s,"humidity")
             arr.append(val/100)
+            fields.append("Humidity")
         if self.state_content & StateContent.CLOUD:
-            val = 0#self.solar.get_info(self.time_s,"cloud_opacity")
+            val = self.solar.get_info(self.time_s,"cloud_opacity")
             arr.append(val/100)
-        return np.array(arr,dtype=np.float32)
+            fields.append("Cloud opacity")
+        return np.array(arr,dtype=np.float32),fields
 
 
     def get_uptime_s(self) -> int:

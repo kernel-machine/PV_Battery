@@ -13,3 +13,8 @@
 - **main.py** contains the training and evaluation code
 - **lib/env.py** contains the RL Environment
 - **lib/device.py** contains the code to simulate the device
+
+
+BEST
+python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --epochs 10
+197

@@ -1,4 +1,5 @@
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO,A2C,DQN
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
 from lib.env_day import EnvDay, StateContent
@@ -11,7 +12,7 @@ import torch
 import numpy as np
 import random
 from stable_baselines3.common.monitor import Monitor
-
+from functools import partial
 
 '''
 Stato solo batteria, epochs 5, 3110 immagini, Update model on done or terminated
@@ -21,11 +22,12 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--steps",default=10, required=False, type=int)
 parser.add_argument("--update_steps",default=512, required=False, type=int)
 parser.add_argument("--epochs",default=5, required=False, type=int)
-parser.add_argument("--alg", default="ppo", choices=["ppo","a2c"])
+parser.add_argument("--alg", default="ppo", choices=["ppo","a2c","dqn"])
 parser.add_argument("--use_solar", default=False, action="store_true")
 parser.add_argument("--use_month", default=False, action="store_true")
 parser.add_argument("--use_hour", default=False, action="store_true")
 parser.add_argument("--use_day", default=False, action="store_true")
+parser.add_argument("--use_next_day", default=False, action="store_true")
 parser.add_argument("--use_forecast", default=False, action="store_true")
 parser.add_argument("--use_humidity", default=False, action="store_true")
 parser.add_argument("--use_cloud", default=False, action="store_true")
@@ -74,8 +76,10 @@ if args.use_hour:
     state_content ^= StateContent.HOUR
 if args.use_day:
     state_content ^= StateContent.DAY
+if args.use_next_day:
+    state_content ^= StateContent.NEXT_DAY
 if args.use_forecast:
-    state_content ^= StateContent.FORECAST
+    state_content ^= StateContent.SUN_PREDICTION
 if args.use_pressure:
     state_content ^= StateContent.PRESSURE
 if args.use_cloud:
@@ -112,16 +116,27 @@ eval_callback = MyEvalCallBack(test_env, best_model_path=os.path.join(args.run_f
 device = torch.device("cuda:0") if args.gpu else torch.device("cpu")
 #env = EnvDay(csv_solar_data_path="../solcast2024.csv", step_s=5*60, state_content=state_content)
 vec_env = make_vec_env(lambda: EnvDay(csv_solar_data_path="../solcast2024.csv", step_s=5*60, state_content=state_content, terminated_days=args.term_days), n_envs=args.n_env)
-model = PPO(
-    "MlpPolicy",
-    vec_env,
-    device="cpu",
-    n_epochs=args.epochs,
-    n_steps=args.update_steps,
+alg_entry = None
+if args.alg == "ppo":
+    alg_entry = partial(PPO,
+                        n_epochs=args.epochs,
+                        n_steps = args.update_steps,
+)
+elif args.alg == "a2c":
+    alg_entry = partial(A2C,
+                        n_steps = args.update_steps,
+)
+elif args.alg == "dqn":
+    alg_entry = partial(DQN,
+                        train_freq=args.update_steps)
+model = alg_entry(
+    policy="MlpPolicy",
+    env = vec_env,
+    device=device,
     learning_rate=args.lr,
     verbose=2,
     tensorboard_log=os.path.join(args.run_folder,"tensorboard")
-    )
+)
 
 if not args.val:
     model.learn(total_timesteps=args.steps, progress_bar=True, callback=eval_callback)
@@ -132,28 +147,38 @@ if not args.val:
 
     print("Trainign completed")
 
+path_to_load = None
 if args.val and args.model is not None:
     print("Loading model",args.model)
-    model = PPO.load(args.model)
+    path_to_load = args.model
 else:
     best_model_path = os.path.join(args.run_folder, 'best_model')
     print("Loading model from",best_model_path)
-    model = PPO.load(best_model_path)
+    path_to_load = best_model_path
+
+if args.alg == "ppo":
+    model = PPO.load(path_to_load)
+elif args.alg == "a2c":
+    model = A2C.load(path_to_load)
+elif args.alg == "dqn":
+    model = DQN.load(path_to_load)
     
-def save_plot(battery_levels: list, recharges: list, consumptions:list, times:list, forecast:list, path:str):
+def save_plot(field:dict, path:str):
     # --- Plotting ---
     # sunrises = list(filter(lambda x: x[1] in sunrises , enumerate(times)))
     # sunrises = list(map(lambda x:x[0], sunrises))
 
     plt.figure(figsize=(12, 5))
-    plt.plot(battery_levels, label="Battery Level")
-    plt.plot(recharges, label="Recharge Amount")
-    plt.plot(consumptions, label="Energy Consumed")
-    plt.plot(forecast, label="Energy forecast")
+    # plt.plot(battery_levels, label="Battery Level")
+    # plt.plot(recharges, label="Recharge Amount")
+    # plt.plot(consumptions, label="Energy Consumed")
+    for f_name in fields.keys():
+        plt.plot(fields[f_name], label=f_name)
+    #plt.plot(forecast, label="Energy forecast")
     #plt.vlines(sunrises,ymin=0,ymax=1,colors="violet")
-    start_time = min(times).strftime("%H:%M %d/%m/%y")
-    end_time = max(times).strftime("%H:%M %d/%m/%y")
-    plt.title(f"Simulation from {start_time} untill {end_time}")
+    # start_time = min(times).strftime("%H:%M %d/%m/%y")
+    # end_time = max(times).strftime("%H:%M %d/%m/%y")
+    # plt.title(f"Simulation from {start_time} untill {end_time}")
     plt.xlabel("Time Step")
     plt.ylabel("Energy")
     plt.legend()
@@ -162,7 +187,7 @@ def save_plot(battery_levels: list, recharges: list, consumptions:list, times:li
 
 processed_images = []
 #for w in range(0,120,1):
-test_obs,_ = test_env.reset(options={"norandom":True, "start_day":w})
+test_obs, info = test_env.reset(options={"norandom":True})
 battery_levels, recharges, consumptions, times, forecast = [], [], [], [], []
 battery_levels.append(test_obs[0])
 done = False
@@ -171,6 +196,10 @@ is_plotted = False
 steps = 0
 plot_time = 60*60*24*31
 unprocessed_images = 0
+fields = {}
+for f in info["fields"]:
+    fields[f]=[]
+fields["Energy"]=[]
 while True:
     action,_ = model.predict(test_obs, deterministic=True)
     test_obs, reward, done, terminated, info = test_env.step(action)
@@ -184,30 +213,29 @@ while True:
         print("Plotting", month)
         # Limit da for 1 week
         steps_for_1_week = (60*60*24*7)//300
-        battery_levels = battery_levels[:steps_for_1_week]
-        recharges = recharges[:steps_for_1_week]
-        consumptions = consumptions[:steps_for_1_week]
-        forecast = forecast[:steps_for_1_week]
-        times = times[:steps_for_1_week]
-        #sunrises = list(filter(lambda x:x<=max(times), sunrises))
-        # Creating folders
+        for f in fields.keys():
+            fields[f]=fields[f][:steps_for_1_week]
         image_folder = os.path.join(args.run_folder,"images")
         os.makedirs(image_folder, exist_ok=True)
-        img_file = os.path.join(image_folder,f"image{month}_{w}.jpg")
+        img_file = os.path.join(image_folder,f"image{month}.jpg")
 
-        save_plot(battery_levels, recharges, consumptions, times, forecast, img_file)
-        battery_levels, recharges, consumptions, times, forecast = [], [], [], [], []
+        save_plot(fields, img_file)
+        for f in fields.keys():
+            fields[f].clear()
     if done:
         print()
         print("BATTERY DEPLETED!")
         break
     
-    battery_levels.append(test_obs[0])
-    recharges.append(info["recharge"])
-    consumptions.append(info["cons"])
-    times.append(info["time"])
-    if args.use_forecast:
-        forecast.append(test_obs[-1])
+    # battery_levels.append(test_obs[0])
+    # recharges.append(info["recharge"])
+    # consumptions.append(info["cons"])
+    # times.append(info["time"])
+    # if args.use_forecast:
+    #     forecast.append(test_obs[-1])
+    for value,name in list(zip(test_obs, fields.keys())):
+        fields[name].append(value)
+    fields["Energy"].append(info["cons"])
     steps+=1
 
 print("Ttime reached", test_env.get_human_uptime(), test_env.get_uptime_s())

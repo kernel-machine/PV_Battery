@@ -92,5 +92,25 @@ class TestDevice(unittest.TestCase):
                                recarghed_capacity_wh-idle_capacity_consumption, 4, "PV Solar charging")
 
 
+    def test_energy_consumption(self):
+        device = Device(
+            base_load_energy_ma=50,
+            full_load_energy_ma=1000,
+            battery_max_capacity_mah=1000,
+            battery_nominal_voltage_v=3.7,
+            device_nominal_voltage_v=5,
+            task_duration_s=1
+        )
+        device.reset(0,battery_percentage=0.5)
+        device.set_pv_production_current_w(0)
+        device.update(0)
+        device.update(1)
+        self.assertEqual(device.get_energy_consumption_w(),0.050*5*s2h(1),"Checking idle consumption") #w=v*i
+        device.set_processing_rate(1)
+        device.update(2)
+        device.update(3)
+        self.assertEqual(device.get_energy_consumption_w(),1.050*5*s2h(1),"Checking full power consumption") #w=v*i
+        
+
 if __name__ == "__main__":
     unittest.main()

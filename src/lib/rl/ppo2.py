@@ -9,6 +9,7 @@ from lib.env import NodeEnv
 from lib.env_paolo import BatteryEnv
 from lib.env_paolo import Solar as SolarP
 import random
+import os
 
 # --- Actor-Critic Model ---
 class ActorCritic(nn.Module):
@@ -47,7 +48,10 @@ class PPO:
                  gamma = 0.99,
                  gae_lambda = 0.99,
                  n_steps:int = 256,
-                seed=None):
+                 max_terminated:int = 0,
+                 run_folder:str=None,
+                seed=None,
+                device=torch.device("cuda:0")):
         
         if seed is not None:
             torch.manual_seed(seed)
@@ -61,9 +65,15 @@ class PPO:
         self.gamma = gamma
         self.gae_lambda = gae_lambda
         self.n_steps = n_steps
+        self.max_terminated = max_terminated
+        self.run_folder = run_folder
+        self.device = device
+
+        if self.run_folder is not None and not os.path.exists(self.run_folder):
+            os.mkdir(self.run_folder)
 
         self.env:gym.Env = env
-        self.model = ActorCritic(obs_size=env.observation_space.shape[0])
+        self.model = ActorCritic(obs_size=env.observation_space.shape[0]).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=learning_rate)
 
         # Buffers
@@ -71,8 +81,10 @@ class PPO:
 
     def learn(self, total_steps:int):
         obs,_ = self.env.reset()
+        terminated_count = 0
+        best_reward = 0
         for t in range(total_steps):
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)
             logits, value = self.model(obs_tensor)
             probs = torch.softmax(logits, dim=-1)
             dist = torch.distributions.Categorical(probs)
@@ -91,23 +103,37 @@ class PPO:
 
             obs = next_obs
 
-            if done or terminated:#len(self.obs_buf)>self.n_steps:#len(self.obs_buf)>self.n_steps or done:
+            if terminated:
+                terminated_count+=1
+                if self.max_terminated > 0 and terminated_count >= self.max_terminated:
+                    print(f"Terminated {terminated_count} times")
+                    break
+            if done and not terminated:
+                terminated_count = 0
 
-                print(f"Episode ends after: {len(self.obs_buf)} steps with a total reward of {sum(self.rew_buf)}")
+            if done or terminated:
+
+                print(f"{(t/total_steps):.2f}% | Episode ends in {len(self.obs_buf)} steps\t| Total reward of {sum(self.rew_buf):.1f}\t|","Terminated:",terminated,"|\tDone:",done)
+
+                if sum(self.rew_buf) > best_reward and self.run_folder is not None:
+                    best_reward = sum(self.rew_buf)
+                    print("Saving model")
+                    torch.save(self.model.state_dict(),os.path.join(self.run_folder,"best.pth"))
+
                 # Bootstrapped value
                 with torch.no_grad():
-                    next_val = self.model(torch.tensor(obs, dtype=torch.float32).unsqueeze(0))[1].item()
+                    next_val = self.model(torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device))[1].item()
                 self.val_buf.append(next_val)
                 adv_buf = compute_advantages(self.rew_buf, self.val_buf, self.done_buf, gamma=self.gamma, gae_lambda=self.gae_lambda)
                 returns = np.array(adv_buf) + np.array(self.val_buf[:-1])
 
                 # Convert to tensors
-                obs_t = torch.tensor(np.array(self.obs_buf), dtype=torch.float32)
-                act_t = torch.tensor(np.array(self.act_buf), dtype=torch.int64)
-                logp_old_t = torch.tensor(np.array(self.logp_buf), dtype=torch.float32)
-                adv_t = torch.tensor(adv_buf, dtype=torch.float32)
+                obs_t = torch.tensor(np.array(self.obs_buf), dtype=torch.float32).to(self.device)
+                act_t = torch.tensor(np.array(self.act_buf), dtype=torch.int64).to(self.device)
+                logp_old_t = torch.tensor(np.array(self.logp_buf), dtype=torch.float32).to(self.device)
+                adv_t = torch.tensor(adv_buf, dtype=torch.float32).to(self.device)
                 adv_t = (adv_t - adv_t.mean()) / (adv_t.std() + 1e-8)
-                ret_t = torch.tensor(returns, dtype=torch.float32)
+                ret_t = torch.tensor(returns, dtype=torch.float32).to(self.device)
 
                 # PPO Update
                 for _ in range(self.epochs):
@@ -134,13 +160,17 @@ class PPO:
                 self.obs_buf, self.act_buf, self.logp_buf, self.rew_buf, self.done_buf, self.val_buf = [], [], [], [], [], []
                 obs,_ = self.env.reset()
 
-            if done:
-                obs, _ = self.env.reset()
 
 
     def select_action(self, obs) -> any: #Action
-        test_obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)
+        test_obs_tensor = torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(self.device)
         with torch.no_grad():
             logits, _ = self.model(test_obs_tensor)
             probs = torch.softmax(logits, dim=-1)
             return torch.argmax(probs).item()
+
+    def save(self, path:str) -> None:
+        torch.save(self.model.state_dict(), path)
+
+    def load(self, path:str):
+        self.model.load_state_dict(torch.load(path, weights_only=True))

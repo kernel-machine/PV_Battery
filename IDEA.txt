@@ -84,3 +84,4 @@ Se non riesci ad ottenerle ottienile artificialmente dal dal dataset
 
 Prova altri algoritmi diversi da PPO
 
+Prova sul posizione diversa
