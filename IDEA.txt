@@ -85,3 +85,7 @@ Se non riesci ad ottenerle ottienile artificialmente dal dal dataset
 Prova altri algoritmi diversi da PPO
 
 Prova sul posizione diversa
+
+Questo funziona abbastanza bene
+ python -u main.py --use_solar --use_hour --use_month --steps 4000000 --lr 0.0007 --n_env 1 --term_days 7 --alg a2c --use_forecast --forecast_minutes 60 --update_steps 50
+Fai in modo di introdurre errore nella previsione e dimostra che più hai errore e meno processi

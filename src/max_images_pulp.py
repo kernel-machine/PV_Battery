@@ -86,30 +86,48 @@ else:
     p, l = find_optimal(6)
     print(f"Processed images {p}")
 
-def check_optimal(processing_slots:list[bool], start_day:int):
+def check_optimal(processing_slots:list[bool], start_day:int, flip_index:int = -1):
     start_day = start_day*24*60*60
     def E_s(t):
         return solar.get_solar_w(start_day + DELTA_T + t * DELTA_T) * DELTA_T
     
     # Take first
     if True:
-        for i in range(len(processing_slots)):
-            if not processing_slots[i]:
-                processing_slots[i] = True
-                break
+        if flip_index > 0 and len(processing_slots) < flip_index:
+            processing_slots[i] = not processing_slots[i]
+        else:
+            for i in range(len(processing_slots)):
+                if not processing_slots[i]:
+                    processing_slots[i] = True
+                    break
     else: # Take random
         all_negatives = list(filter(lambda x: not x[1],enumerate(processing_slots)))
         random_false_index = all_negatives[randint(0,len(all_negatives)-1)][0]
         processing_slots[random_false_index] = not processing_slots[random_false_index]
     
     battery_j = MAX_BATTERY_J*0.5
+    negative_battery = False
     for t in range(1,len(processing_slots)+1):
         battery_j += E_s(t) - E_IDLE_J - processing_slots[t-1] * E_PROCESSING_J
         battery_j = min(battery_j, MAX_BATTERY_J)
         if battery_j < 0:
+            negative_battery = True
             print("Negative battery", battery_j)
     print("Final battery",battery_j)
     print("Processed images",sum(processing_slots))
+    return negative_battery
 
-check_optimal(l,6)
+l_index = enumerate(l)
+l_index = list(filter(lambda x:not x[1], l_index))
+idle_indexes = list(map(lambda x:x[0], l_index))
+print("Idle indexes",idle_indexes)
+violations = 0
+for idle_index in idle_indexes:
+    local_list = l.copy()
+    is_negative = check_optimal(local_list,6, flip_index=idle_index)
+    if not is_negative:
+        print("Error!")
+    else:
+        violations += 1
+print("Negatives indexes len",len(idle_indexes), "Violations",violations)
 exit(0)
