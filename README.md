@@ -14,16 +14,15 @@
 - **lib/env.py** contains the RL Environment
 - **lib/device.py** contains the code to simulate the device
 
+tsp -L "best latent quant" python -u main.py --use_solar --use_hour_minute --use_images --use_quantize_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 128 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 32
+tsp -L "best latent quant" python -u main.py --use_solar --use_hour_minute --use_images --use_quantize_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 256 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 32
+tsp -L "best latent quant" python -u main.py --use_solar --use_hour_minute --use_images --use_quantize_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 256 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 64
+tsp -L "best latent quant" python -u main.py --use_solar --use_hour_minute --use_images --use_quantize_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 256 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 128
+tsp -L "best latent quant" python -u main.py --use_solar --use_hour_minute --use_images --use_quantize_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 512 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 128
 
-BEST
-python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --epochs 10
-197
-
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 0.5
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 0.6
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 0.7
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 0.8
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 0.9
-tsp python -u main.py --use_solar --use_hour --use_month --steps 3000000 --lr 0.0001 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --forecast_minutes 60 --update_steps 50 --prediction_accuracy 1
-
-python -u main.py --use_solar --use_hour --use_month --steps 50000000 --lr 0.0007 --n_env 1 --term_days 7 --alg a2c --use_estimate_forecast --choose_forecast --update_steps 50 --prediction_accuracy 0.7
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 128 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 24
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 128 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 32
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 128 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 48
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 512 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 48
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 512 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 64
+tsp -L "best latent embed" python -u main.py --use_solar --use_hour_minute --use_images --use_embed_prev_day --steps 2000000 --update_steps 2048 --alg ppo --lr 0.0003 --term_days 1 --test_year 2025 --n_env 10 --layer_width 128 --lr_decay lin --train_days 300 --autostart --start_thr 0.05 --latent_size 64
