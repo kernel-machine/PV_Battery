@@ -4,7 +4,11 @@
 - Author 2
 - Author 3
 ## Abstract :page_facing_up:
-... 
+Edge devices powered by renewable energy sources,
+such as solar panels, face the challenge of operating under uncertain and intermittent energy availability. This paper
+propose a Reinforcement Learning (RL)  scheduler for heavy tasks, e.g. image classification running on solar-powered devices with an accumulator. 
+
+The scheduler maximizes the total number of processed images by deciding whether to process an image immediately or store it for later processing, all while remaining energy-aware to prevent device shutdown. Crucially, the method operates without any prior knowledge of future solar energy production, making it suitable for devices lacking an internet connection for forecasting. Compared to an optimal solution provided by an Integer Linear Programming (ILP), the RL method achieved optimal performance on 76\% of the evaluation days. On the days where it didn't match the optimum, the average deficit was minimal, corresponding to only 224 seconds of missed captured frames per day.
 
 ## Setup the system :gear:
 
