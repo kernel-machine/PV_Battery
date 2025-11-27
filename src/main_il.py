@@ -1,4 +1,4 @@
-from max_images_pulp2 import find_optimal_list
+from ilp_solver import find_optimal_list
 from utils import save_plot
 from lib.solar.solar import Solar
 from random import randint, seed
@@ -205,8 +205,6 @@ def train(epochs:int, batch_size:int, learing_rate:float, device:torch.device):
             solar_profiles = list(range(start_slot, T_max))
             solar_profiles = list(map(lambda x:solar.get_solar_w(x*DELTA_T)*DELTA_T, solar_profiles))
             
-            # Augmentation
-            # Amplitude augmentation
             random_shift = randint(50,150)/100
             solar_profiles = list(map(lambda x:max(0,x*random_shift), solar_profiles))
 
@@ -314,7 +312,6 @@ def train(epochs:int, batch_size:int, learing_rate:float, device:torch.device):
                 TARGET_SUMs = (PROCESSING_SPEED * DELTA_T * target_actions.sum(dim=1)).detach().cpu().numpy().tolist()
                 OUT_SUMs = [int(round(x)) for x in OUT_SUMs]
                 TARGET_SUMs = [int(round(x)) for x in TARGET_SUMs]
-                #print(f"Epoch {epoch+1}/{epochs} Loss {l.item():.4f}\tProcessed images\tOut: {OUT_SUMs}\tTARGET: {TARGET_SUMs}")
 
                 batch_inputs = []
                 target_actions = []

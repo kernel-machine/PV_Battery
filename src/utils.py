@@ -15,12 +15,6 @@ from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 
 class ForecastEmbedded(BaseFeaturesExtractor):
-    """
-    :param observation_space: (gym.Space)
-    :param features_dim: (int) Number of features extracted.
-        This corresponds to the number of unit for the last layer.
-    """
-
     def __init__(self, observation_space: gym.spaces.Box, normal_dim:int, forecast_dim:int, latent_dim: int):
         super().__init__(observation_space, features_dim=normal_dim+latent_dim)
 
@@ -75,21 +69,19 @@ def cosine_schedule(initial_value):
         return initial_value * 0.5 * (1 + math.cos(math.pi * (1 - progress_remaining)))
     return func
 
-def save_plot(fields:dict, path:str, views:list = None, x_values:list[datetime] = None,
-               custom_alpha:dict = None,
-               custom_linestyle:dict = None):
-    #plt.figure(figsize=(12, 5))
-    plt.rcParams.update({'font.size': 14}) # Scegli un valore più grande, ad esempio 14 o 16
-    plt.rcParams['axes.labelsize'] = 16 # Aumenta solo le etichette degli assi (Energy, Time Step)
-    plt.rcParams['legend.fontsize'] = 14 # Aumenta solo la dimensione della legenda
+def save_plot(fields:dict, path:str|list, views:list = None, x_values:list[datetime] = None,
+               custom_alpha:dict = None, custom_linestyle:dict = None, custom_lambda:callable=None, y_label:str=None, x_label:str="Time Step"):
+
+    plt.rcParams.update({'font.size': 14})
+    plt.rcParams['axes.labelsize'] = 16
+    plt.rcParams['legend.fontsize'] = 14 
     WIDTH = 2
     plt.rcParams['axes.linewidth'] = WIDTH 
 
-    # Spessore delle linee dei tick (le piccole lineette sugli assi)
     plt.rcParams['xtick.major.width'] = WIDTH
     plt.rcParams['ytick.major.width'] = WIDTH
     
-    fig, ax = plt.subplots(figsize=(12, 5))  # Ottieni l'oggetto 'ax' per personalizzare l'asse
+    fig, ax = plt.subplots(figsize=(12, 6)) 
     for f_name in fields.keys():
         alpha = 1
         linestyle = "solid"
@@ -102,24 +94,37 @@ def save_plot(fields:dict, path:str, views:list = None, x_values:list[datetime] 
                 drawstyle = None
                 if f_name == "Energy":
                     drawstyle = 'steps-post'
-                ax.step(x_values, fields[f_name], label=f_name, drawstyle=drawstyle, alpha=alpha, linestyle=linestyle, linewidth=WIDTH)
+                ax.step(x_values, fields[f_name], label=f_name, drawstyle=drawstyle, alpha=alpha, linestyle=linestyle, linewidth=WIDTH, where="post")
             else:
-                ax.step(range(len(fields[f_name])), fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH)
+                ax.step(range(len(fields[f_name])), fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH, where="post")
         elif views is not None and f_name in views:
             if x_values is not None:
-                ax.step(x_values, fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH)
+                ax.step(x_values, fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH, where="post")
             else:
-                ax.step(range(len(fields[f_name])), fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH)
-    
+                ax.step(range(len(fields[f_name])), fields[f_name], label=f_name, alpha=alpha, linestyle=linestyle, linewidth=WIDTH, where="post")
+    if custom_lambda is not None:
+        custom_lambda(ax)
     ax.set_xlim(left=0)
-    ax.set_xticks(ax.get_xticks()[::12])
-    ax.set_xlabel("Time Step")
-    plt.ylabel("Energy")
-    plt.legend()
+    ax.set_xlabel(x_label)
+    if y_label:
+        ax.set_ylabel(y_label)
+
+    handles, labels = ax.get_legend_handles_labels()
+    unique = {}
+    for handle, label in zip(handles, labels):
+        if label not in unique.keys():
+            unique[label] = handle
+    unique_handles = unique.values()
+    unique_labels = unique.keys()
+    plt.legend(unique_handles, unique_labels)
+
     plt.grid(True)
     plt.tight_layout()
-    #tikzplotlib.save("test.tex")
-    plt.savefig(path)
+    if type(path)==list:
+        for e in path:
+            plt.savefig(e)
+    else:
+        plt.savefig(path)
     plt.close(fig)
 
 class MyEvalCallBack(BaseCallback):
@@ -132,7 +137,6 @@ class MyEvalCallBack(BaseCallback):
         self.next_call = eval_freq
 
     def _on_step(self):
-        #if self.n_calls % 10 == 0: print("Checking callback",self.eval_freq > 0 , self.n_calls > self.next_call, self.n_calls , self.next_call)
         if self.eval_freq > 0 and self.n_calls > self.next_call:
             print("Triggered callback",self.n_calls, self.next_call)
             self.next_call+=self.eval_freq
@@ -149,51 +153,10 @@ class MyEvalCallBack(BaseCallback):
                     break
         return True
 
-class SaveOnBestTrainingRewardCallback(BaseCallback):
-    """
-    Callback for saving a model (the check is done every ``check_freq`` steps)
-    based on the training reward (in practice, we recommend using ``EvalCallback``).
-
-    :param check_freq: (int)
-    :param log_dir: (str) Path to the folder where the model will be saved.
-      It must contains the file created by the ``Monitor`` wrapper.
-    :param verbose: (int)
-    """
-    def __init__(self, check_freq: int, log_dir: str, verbose=1):
-        super(SaveOnBestTrainingRewardCallback, self).__init__(verbose)
-        self.check_freq = check_freq
-        self.log_dir = log_dir
-        self.save_path = os.path.join(log_dir, 'best_model')
-        self.best_mean_reward = -np.inf
-
-    def _init_callback(self) -> None:
-        # Create folder if needed
-        if self.save_path is not None:
-            os.makedirs(self.save_path, exist_ok=True)
-
-    def _on_step(self) -> bool:
-        if self.n_calls % self.check_freq == 0:
-
-          # Retrieve training reward
-          x, y = ts2xy(load_results(self.log_dir), 'timesteps')
-          if len(x) > 0:
-              # Mean training reward over the last 100 episodes
-              mean_reward = np.mean(y[-100:])
-              if self.verbose > 0:
-                print("Num timesteps: {}".format(self.num_timesteps))
-                print("Best mean reward: {:.2f} - Last mean reward per episode: {:.2f}".format(self.best_mean_reward, mean_reward))
-
-              # New best model, you could save the agent here
-              if mean_reward > self.best_mean_reward:
-                  self.best_mean_reward = mean_reward
-                  # Example for saving best model
-                  if self.verbose > 0:
-                    print("Saving new best model to {}".format(self.save_path))
-                  self.model.save(self.save_path)
-
-        return True
-    
 def signal_noise(signal:list[float], strength:float=0.2, max_value:float=1, rng:random.Random = None) -> list[float]:
+    if strength == 0:
+        return signal
+    
     if rng is None:
         rng = random.Random()
     

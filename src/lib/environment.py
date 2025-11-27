@@ -1,22 +1,11 @@
 import gymnasium as gym
-from lib.device import Device
 import numpy as np
 from lib.solar.solar import Solar
 import time
-import math
-from lib.utils import s2h
 import random
 from lib.utils import StateContent
-from enum import IntEnum
 import torch.nn as nn
 import torch
-from utils import signal_noise, save_plot
-import concurrent.futures
-
-class ActionEnum(IntEnum):
-    PROCESS_NEW_FRAMES = 0
-    ADD_TO_BUFFER = 1
-    PROCESS_NEW_FRAMES_AND_BUFFER = 2
 
 class EnvBeeDay(gym.Env):
     def __init__(self,
@@ -35,7 +24,7 @@ class EnvBeeDay(gym.Env):
                  state_content:int = StateContent.SOLAR,
                  random_reset:bool = True,
                  terminated_days:int = 1,
-                 forecast_time_m:int = 60,
+                 forecast_steps:int = 128,
                  choose_forecast:bool = False,
                  latent_size:int = 24,
                  train_days:int = 30,
@@ -45,7 +34,7 @@ class EnvBeeDay(gym.Env):
         self.state_content = state_content
         self.random_reset = random_reset
         self.terminated_days = terminated_days
-        self.forecast_time_m = forecast_time_m
+        self.forecast_steps = forecast_steps
         self.choose_forecast = choose_forecast
         self.selected_day = selected_day
         self.start_hour = start_hour
@@ -78,14 +67,12 @@ class EnvBeeDay(gym.Env):
         self.processed_images = 0
         self.haversted_energy_j = self.battery_curr_j
         self.buffer_length = 0
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         if self.state_content & StateContent.EMBEDDED_PREV_NEXT_DAY or \
             self.state_content & StateContent.EMBEDDED_CURRENT_DAY or \
                 self.state_content & StateContent.EMBEDDED_NEXT_DAY:
-            self.linear_mlp = nn.Linear(128, self.latent_size)
+            self.linear_mlp = nn.Linear(self.forecast_steps, self.latent_size)
             torch.nn.init.xavier_uniform_(self.linear_mlp.weight)
             torch.nn.init.constant_(self.linear_mlp.bias, 0)
-            self.linear_mlp.to(self.device)
         else:
             self.linear_mlp = None
         self.observation_space = gym.spaces.Box(0.0, 1.0, [len(self.__get_obs()[0])])
@@ -110,7 +97,7 @@ class EnvBeeDay(gym.Env):
             day = self.rng.randint(0,self.train_days)
 
         if self.start_hour < 0:
-            # Start with battery at least at 20%
+            # Start with battery at least at {self.start_threshold}%
             self.battery_curr_j = 0
             self.time_s = day*24*60*60
             while self.battery_curr_j/self.battery_max_j <= self.start_threshold:
@@ -161,34 +148,9 @@ class EnvBeeDay(gym.Env):
 
         processable_images = self.processing_speed_fps * self.step_size_s # Processable images must be > captured
 
-        '''
-        if terminated: # Process the list
-            necessary_energy_j = self.buffer_length*self.image_processing_energy_j
-            if not self.random_reset:
-                print(f"Terminated with {self.buffer_length} buffered images")
-                print(f"Stored energy can process {self.battery_curr_j//self.image_processing_energy_j} images")
-            
-            if self.battery_curr_j >= necessary_energy_j: #I can process the entire buffer
-                reward = self.buffer_length/processable_images
-                self.processed_images += self.buffer_length
-                self.buffer_length = 0
-                processing_steps = self.buffer_length//processable_images
-            else: #The entire buffer cannot be processed
-                processable_images_from_buffer = self.battery_curr_j//self.image_processing_energy_j
-                self.buffer_length -= processable_images_from_buffer
-                processing_steps = processable_images_from_buffer//processable_images
-                self.processed_images += processable_images_from_buffer
-                reward = -self.buffer_length/processable_images
-                #done = True
-            
-            self.battery_curr_j -= necessary_energy_j
-            if not self.random_reset: print("Final reward",reward)
-        else:
-        '''
-        
         action = action[0]
-        processed_amount = int(action*processable_images)                                   # Images processed in the next interval
-        processed_amount = min(processed_amount, self.buffer_length + captured_images)      # Processed images has as upper bound the buffered images
+        processed_amount = round(action*processable_images)                                   # Images processed in the next interval
+        processed_amount = min(processed_amount, self.buffer_length + captured_images)        # Processed images has as upper bound the buffered images
         
         necessary_enegy_j = (self.energy_for_image_processing_j * processed_amount) + self.energy_for_idle_step_j
         if self.battery_curr_j > necessary_enegy_j: 
@@ -217,7 +179,12 @@ class EnvBeeDay(gym.Env):
 
         obs, fields = self.__get_obs()
 
-        info = {"fields":fields, "cons":processed_amount/processable_images, "time":datetime, "images":captured_images}
+        info = {"fields":fields,
+                "cons":processed_amount/processable_images,
+                "time":datetime,
+                "images":captured_images,
+                "amount":processed_amount
+                }
 
         return obs, reward, done, terminated, info
 
@@ -231,7 +198,6 @@ class EnvBeeDay(gym.Env):
         arr = [
             self.battery_curr_j/self.battery_max_j
         ]
-        max_steps = self.terminated_days*24*60/5
 
         if self.state_content & StateContent.SOLAR:
             arr.append(self.solar.get_solar_w(self.time_s)/self.solar.max_power_w)
@@ -240,7 +206,6 @@ class EnvBeeDay(gym.Env):
             arr.append(self.solar.get_datetime(self.time_s).month/12)
             fields.append("Month")
         if self.state_content & StateContent.HOUR:
-            #m = self.solar.get_datetime(self.time_s).minute #0-59
             h = self.solar.get_datetime(self.time_s).hour #0-23
             arr.append(h/23)
             fields.append("Hour")
@@ -327,7 +292,9 @@ class EnvBeeDay(gym.Env):
         if self.state_content & StateContent.EMBEDDED_CURRENT_DAY:
             day = self.solar.get_datetime(self.time_s).timetuple().tm_yday
             values = self.solar.get_day_values(day)
-            while len(values) < 128:
+            print("Values",len(values))
+            #TODO values are 228, cannot fit into 128
+            while len(values) < self.forecast_steps:
                 values.insert(0,0)
         if self.state_content & StateContent.EMBEDDED_NEXT_DAY or \
             self.state_content & StateContent.EMBEDDED_PREV_NEXT_DAY or \
@@ -344,7 +311,7 @@ class EnvBeeDay(gym.Env):
             # with concurrent.futures.ThreadPoolExecutor(max_workers=4) as exec:
             #     values = list(exec.map(f, times))
             values = []
-            for i in range(128):
+            for i in range(self.forecast_steps):
                 forecast_time_s = self.time_s+self.step_size_s*i
                 if self.solar.get_datetime(forecast_time_s).day <= today: 
                     v = self.solar.get_solar_w(forecast_time_s)
@@ -352,25 +319,22 @@ class EnvBeeDay(gym.Env):
                 else:
                     v = 0
                 values.append(v)
-            values = signal_noise(values, strength=0.1, max_value=max(values), rng=self.rng)
+            #values = signal_noise(values, strength=self.prevision_noise_amount, max_value=max(values), rng=self.rng)
         
         if self.state_content & StateContent.EMBEDDED_CURRENT_DAY or \
               self.state_content & StateContent.EMBEDDED_NEXT_DAY or \
               self.state_content & StateContent.EMBEDDED_PREV_NEXT_DAY:
-            # t = torch.tensor(values, device=self.device, dtype=torch.float32)
-            # with torch.no_grad():
-            #     latent_space = self.linear_mlp(t)
-            #     latent_space=(latent_space+1)/2
-                for index,l in enumerate(values):
-                    arr.append(l)
-                    fields.append(f"Latent {index}")
+
+            for index,l in enumerate(values):
+                arr.append(l)
+                fields.append(f"Latent {index}")
         
         if self.state_content & StateContent.QUANTIZED_DAY or \
               self.state_content & StateContent.QUANTIZED_PREV_DAY:
             values = np.array(values, dtype=np.float32)
             if len(values) % self.latent_size != 0:
                 raise Exception(f"Original space ({len(values)}) is not divisible by the latent space size {self.latent_size}")
-            splits = int(128/self.latent_size)
+            splits = int(self.forecast_steps/self.latent_size)
             values = values.reshape(-1, splits).mean(axis=1)
             for index,v in enumerate(values):
                 arr.append(v)
