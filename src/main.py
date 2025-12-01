@@ -90,6 +90,10 @@ def main():
     torch.backends.cudnn.benchmark = False
     torch.use_deterministic_algorithms(True)
 
+    # Should fix type 3 font error
+    plt.rcParams['pdf.fonttype'] = 42
+    plt.rcParams['ps.fonttype'] = 42
+
     if not args.val and args.run_folder == "../runs":
         if not os.path.exists(args.run_folder):
             os.mkdir(args.run_folder)

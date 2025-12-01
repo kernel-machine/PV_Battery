@@ -3,6 +3,9 @@ from tbparse import SummaryReader
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['ps.fonttype'] = 42
+
 log_dir_ppo = "../runs/195/PPO_1" 
 log_dir_a2c = "../runs/215/A2C_1" 
 
