@@ -4,11 +4,11 @@
 - Author 2
 - Author 3
 ## Abstract :page_facing_up:
-Edge devices powered by renewable energy sources, such as solar panels, face the challenge of operating under uncertain and intermittent energy availability. This paper
+Edge devices powered by renewable energy sources,
+such as solar panels, face the challenge of operating under uncertain and intermittent energy availability. This paper
 propose a Reinforcement Learning (RL)  scheduler for heavy tasks, e.g. image classification running on solar-powered devices with an accumulator. 
 
-The scheduler maximizes the total number of processed images by deciding whether to process an image immediately or store it for later processing, all while remaining energy-aware to prevent device shutdown. Crucially, the method operates without any prior knowledge of future solar energy production, making it suitable for devices lacking an internet connection for forecasting. Compared to an optimal solution provided by an Integer Linear Programming (ILP), the RL method achieved optimal performance on 76\% of the evaluation days. On the days where it didn't match the optimum, the average deficit was minimal, corresponding to only 224 seconds of missed captured frames per day.
-This demonstrates that RL is a viable alternative to optimal solvers even in forecast-free scenarios
+The scheduler maximizes the total number of processed images by deciding whether to process an image immediately or store it for later processing, all while remaining energy-aware to prevent device shutdown. Crucially, the method operates without any prior knowledge of future solar energy production, making it suitable for devices lacking an internet connection for forecasting. The RL method processes 99.8% of the images processed by the optimal solution obtained through Integer Linear Programming (ILP), missing on average only 224 seconds of captured frames per day. This demonstrates that RL is a viable alternative to optimal solvers even in forecast-free scenarios
 ## Setup the system :gear:
 
 - Put [solcast2024.csv](https://github.com/user-attachments/files/21213151/solcast2024.csv) and [solcast2025.csv](https://github.com/user-attachments/files/21213140/solcast2025.csv) on the project folder (not in SRC) but in the project folder

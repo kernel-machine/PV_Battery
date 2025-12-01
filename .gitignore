@@ -4,6 +4,7 @@ wandb
 __pycache__
 logs
 env
+*.pdf
 *.png
 runs
 models

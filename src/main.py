@@ -4,6 +4,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
 from stable_baselines3.common import logger as sb3_logger
 from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.monitor import Monitor
 from lib.environment import EnvBeeDay
 from lib.utils import StateContent
 import matplotlib.pyplot as plt
@@ -176,24 +177,34 @@ def main():
 
     start_hour = -1 if args.autostart else 7
     end_hour = -1 if args.autostart else 18
-    vec_env = make_vec_env(lambda: EnvBeeDay(solar2024, 
-                                            step_s=5*60,
-                                            selected_day=1,
-                                            start_hour=start_hour,
-                                            end_hour=end_hour,
-                                            acquistion_speed_fps=3,
-                                            processing_speed_fps=4,
-                                            seed=SEED, 
-                                            state_content=state_content, 
-                                            random_reset=True, 
-                                            terminated_days=args.term_days, 
-                                            forecast_steps=args.forecast_steps, 
-                                            choose_forecast=args.choose_forecast,
-                                            latent_size=args.latent_size,
-                                            train_days=args.train_days,
-                                            start_threshold=args.start_thr,
-                                            prevision_noise_amount=args.prevision_noise),
-                                        n_envs=args.n_env, vec_env_cls=SubprocVecEnv, seed=SEED)
+    def make_env_factory(env_id: int):
+        def env_create():
+            print("ENV ID",env_id)
+            env = EnvBeeDay(solar2024, 
+                step_s=5*60,
+                selected_day=1,
+                start_hour=start_hour,
+                end_hour=end_hour,
+                acquistion_speed_fps=3,
+                processing_speed_fps=4,
+                seed=SEED, 
+                state_content=state_content, 
+                random_reset=True, 
+                terminated_days=args.term_days, 
+                forecast_steps=args.forecast_steps, 
+                choose_forecast=args.choose_forecast,
+                latent_size=args.latent_size,
+                train_days=args.train_days,
+                start_threshold=args.start_thr,
+                prevision_noise_amount=args.prevision_noise)
+            if env_id == 0:
+                log_path = os.path.join(args.run_folder, f"monitor_{env_id}")
+                env = Monitor(env, log_path)
+            return env
+        return env_create
+    env_fns = [make_env_factory(i) for i in range(args.n_env)]
+    vec_env = SubprocVecEnv(env_fns)
+    #vec_env = make_vec_env(env_create, n_envs=args.n_env, vec_env_cls=SubprocVecEnv, seed=SEED)
 
     test_env = EnvBeeDay(  solar2025,
                         step_s=5*60,
@@ -290,14 +301,15 @@ def main():
 
     if not args.val:
         try:
-            callbacks = []
-            eval_callback = EvalCallback(test_env)
-            model.learn(total_timesteps=args.steps, progress_bar=False)#, callback=eval_callback)
+            #reward_callback = TrainingRewardCallback(args.run_folder, verbose=1)
+            model.learn(total_timesteps=args.steps, progress_bar=False)# callback=eval_callback)
             if args.run_folder is not None:
                 model_path = os.path.join(args.run_folder,"last.pth")
                 print("Model saved in",model_path)
                 model.save(model_path)
 
+            #log_path = os.path.join(args.run_folder, f"monitor_{0}.monitor.csv")
+            #plot_results(log_path)
             print("Trainign completed")
         except Exception as e:
             print(e)
@@ -723,7 +735,7 @@ def main():
                             color = "red"
                         else:
                             color = "green"
-                    label = "Optimal" if optimal else "Fleassible"
+                    label = "Optimal" if optimal else "Sub-Optimal"
                     ax.axvspan(i, i+1, facecolor=color, alpha=0.2, label=label)
                     #ax.fill_between(i,0,1,facecolor=color)
         rl = list(map(lambda x:x/max_value_per_day,rl_results))

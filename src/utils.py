@@ -12,7 +12,7 @@ from scipy.ndimage import gaussian_filter1d
 import matplotlib as mpl
 import torch
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-
+from stable_baselines3.common import results_plotter
 
 class ForecastEmbedded(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box, normal_dim:int, forecast_dim:int, latent_dim: int):
@@ -81,7 +81,7 @@ def save_plot(fields:dict, path:str|list, views:list = None, x_values:list[datet
     plt.rcParams['xtick.major.width'] = WIDTH
     plt.rcParams['ytick.major.width'] = WIDTH
     
-    fig, ax = plt.subplots(figsize=(12, 6)) 
+    fig, ax = plt.subplots(figsize=(12, 5.5)) 
     for f_name in fields.keys():
         alpha = 1
         linestyle = "solid"
@@ -181,3 +181,28 @@ def signal_noise(signal:list[float], strength:float=0.2, max_value:float=1, rng:
         signal_smossed[:first_significant_idx] = 0.0
         signal_smossed[last_significant_idx + 1:] = 0.0
     return signal_smossed
+
+def plot_results(log_folder, title='Learning Curve'):
+    """
+    Carica e crea un grafico delle reward (rollout/ep_rew_mean)
+    dalla directory specificata.
+    """
+    # 3.1 Carica i dati dal file monitor.csv
+    
+    x, y = results_plotter.ts2xy(log_folder, 'timesteps')
+    
+    # Se vuoi plottare la media mobile per una curva più liscia
+    # y = results_plotter.rolling_window(y, window=50) # Esempio di media mobile
+    
+    # 3.2 Crea il grafico con Matplotlib
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, y)
+    plt.xlabel('Timesteps')
+    plt.ylabel('Average Episode Rewards')
+    plt.title(title)
+    plt.grid()
+    
+    # 3.3 Salva il grafico come file PNG (o altro formato)
+    plot_file_path = f"{log_folder}/reward_plot.png"
+    plt.savefig(plot_file_path)
+    print(f"Grafico delle reward salvato in: {plot_file_path}")
