@@ -183,18 +183,8 @@ def signal_noise(signal:list[float], strength:float=0.2, max_value:float=1, rng:
     return signal_smossed
 
 def plot_results(log_folder, title='Learning Curve'):
-    """
-    Carica e crea un grafico delle reward (rollout/ep_rew_mean)
-    dalla directory specificata.
-    """
-    # 3.1 Carica i dati dal file monitor.csv
-    
     x, y = results_plotter.ts2xy(log_folder, 'timesteps')
     
-    # Se vuoi plottare la media mobile per una curva più liscia
-    # y = results_plotter.rolling_window(y, window=50) # Esempio di media mobile
-    
-    # 3.2 Crea il grafico con Matplotlib
     plt.figure(figsize=(10, 6))
     plt.plot(x, y)
     plt.xlabel('Timesteps')
@@ -202,7 +192,5 @@ def plot_results(log_folder, title='Learning Curve'):
     plt.title(title)
     plt.grid()
     
-    # 3.3 Salva il grafico come file PNG (o altro formato)
     plot_file_path = f"{log_folder}/reward_plot.png"
     plt.savefig(plot_file_path)
-    print(f"Grafico delle reward salvato in: {plot_file_path}")
