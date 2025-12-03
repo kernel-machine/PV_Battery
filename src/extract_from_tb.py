@@ -20,7 +20,7 @@ def get_df(log_dir):
         columns='tag', 
         values='value'
     ).reset_index() 
-    return df_rewards_pivot
+    return df_rewards_pivot[:len(df_rewards_pivot)//3]
 
 df_rewards_pivot_ppo = get_df(log_dir_ppo)
 df_rewards_pivot_a2c = get_df(log_dir_a2c)
@@ -42,7 +42,7 @@ ax.plot(df_rewards_pivot_a2c["step"], df_rewards_pivot_a2c["rollout/ep_rew_mean"
 ax.plot(df_rewards_pivot_ppo["step"], ppo_smoothed, linewidth=2, label="PPO (smoothed)", color='tab:blue')
 ax.plot(df_rewards_pivot_a2c["step"], a2c_smoothed, linewidth=2, label="A2C (smoothed)", color='tab:orange')
 
-ax.set_xlabel("Episode (Step)")
+ax.set_xlabel("Steps")
 ax.set_ylabel("Mean Episode Reward")
 ax.set_title("Training Mean Reward over Time")
 ax.legend()
